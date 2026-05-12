@@ -9,7 +9,7 @@
     "dev": "next dev -H 0.0.0.0 -p 3000",
     "dev:clean": "rm -rf .next && next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 0.0.0.0",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "ci": "npm run typecheck && npm run lint && npm run build"
