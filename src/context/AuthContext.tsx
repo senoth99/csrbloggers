@@ -27,11 +27,13 @@ const SESSION_KEY = "casher-bloggers-session-v1";
 const USERS_KEY = "casher-bloggers-users-v2";
 const USERS_KEY_LEGACY = "casher-bloggers-users-v1";
 
-/** Суперадмин по умолчанию: логин SENOTH, пароль admin (смените после первого входа в проде). */
+/** Суперадмин по умолчанию: логин senoth, пароль admin (смените после первого входа в проде). */
 export const SUPERADMIN_LOGIN = "senoth";
-/** Хеш для senoth + admin при дефолтном PEPPER из lib/auth-password */
-const SENOTH_DEFAULT_PASSWORD_HASH =
+/** Старый захардкоженный SHA-256 для senoth+admin только при PEPPER по умолчанию (миграция при смене NEXT_PUBLIC_AUTH_PEPPER). */
+const SENOTH_LEGACY_BAKED_PASSWORD_HASH =
   "34fc13a4f3732fb6512688a43c79e0b823f146b95c52a27f47fc477376411fed";
+
+const DEFAULT_SUPERADMIN_PASSWORD = "admin";
 
 /** @deprecated используйте SUPERADMIN_LOGIN */
 export const SUPERADMIN_USERNAME = SUPERADMIN_LOGIN;
@@ -94,13 +96,29 @@ function saveUsers(users: PanelUser[]) {
   localStorage.setItem(USERS_KEY, JSON.stringify(users));
 }
 
-function ensureSuperadmin(users: PanelUser[]): PanelUser[] {
+async function ensureSuperadmin(users: PanelUser[]): Promise<PanelUser[]> {
+  const existing = users.find(
+    (u) => normalizeUsername(u.login) === SUPERADMIN_LOGIN && u.role === "superadmin",
+  );
   const withoutSenoth = users.filter((u) => normalizeUsername(u.login) !== SUPERADMIN_LOGIN);
+  const freshDefaultHash = await hashLoginPassword(
+    SUPERADMIN_LOGIN,
+    DEFAULT_SUPERADMIN_PASSWORD,
+  );
+  let passwordHash: string;
+  if (!existing?.passwordHash) {
+    passwordHash = freshDefaultHash;
+  } else if (existing.passwordHash === SENOTH_LEGACY_BAKED_PASSWORD_HASH) {
+    // Раньше в localStorage писался хеш только под дефолтный PEPPER — пересчитать под текущий.
+    passwordHash = freshDefaultHash;
+  } else {
+    passwordHash = existing.passwordHash;
+  }
   const senoth: PanelUser = {
     login: SUPERADMIN_LOGIN,
     role: "superadmin",
     displayName: "Суперадмин",
-    passwordHash: SENOTH_DEFAULT_PASSWORD_HASH,
+    passwordHash,
   };
   const rest = withoutSenoth.filter((u) => u.role !== "superadmin");
   return [senoth, ...rest];
@@ -118,7 +136,7 @@ async function buildInitialUsers(): Promise<PanelUser[]> {
   let list = Array.from(byLogin.values());
   // Удалить устаревший суперадмин-логин из старых данных
   list = list.filter((u) => normalizeUsername(u.login) !== "contact_voropaev");
-  const next = ensureSuperadmin(list);
+  const next = await ensureSuperadmin(list);
   saveUsers(next);
   try {
     if (typeof window !== "undefined" && localStorage.getItem(USERS_KEY))
