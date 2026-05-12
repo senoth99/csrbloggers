@@ -1,0 +1,77 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  @apply bg-app-bg text-app-fg antialiased;
+}
+
+/* Ссылки без подчёркивания (в т.ч. при hover) */
+a,
+a:hover,
+a:focus,
+a:active {
+  text-decoration: none;
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(13, 92, 50, 0.45) #000000;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #0d5c32;
+  opacity: 0.5;
+  border-radius: 0;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+/* Единый стиль: без скруглений у блоков, полей, ячеек и кнопок */
+*,
+*::before,
+*::after {
+  border-radius: 0 !important;
+}
+
+/* Страница входа — скругления и свечение как в референсе */
+.login-root .login-modal {
+  border-radius: 14px !important;
+}
+.login-root .login-field,
+.login-root .login-submit {
+  border-radius: 10px !important;
+}
+
+.login-root .login-busy-dot {
+  border-radius: 9999px !important;
+}
