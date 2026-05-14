@@ -69,10 +69,12 @@ function LoginForm() {
 
       {authBackendError ? (
         <p className="mt-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-left text-xs leading-relaxed text-amber-100/90">
-          {authBackendError} Задайте в <code className="text-white/80">.env.local</code> переменные{" "}
-          <code className="text-white/80">DATABASE_URL</code> и <code className="text-white/80">SESSION_SECRET</code>
-          , затем выполните{" "}
-          <code className="text-white/80">npx prisma db push</code> и <code className="text-white/80">npm run db:seed</code>.
+          {authBackendError} Создайте в корне проекта файл <code className="text-white/80">.env</code> (или{" "}
+          <code className="text-white/80">.env.local</code> для Next) с{" "}
+          <code className="text-white/80">DATABASE_URL</code> и <code className="text-white/80">SESSION_SECRET</code>.
+          Команды Prisma читают только <code className="text-white/80">.env</code>:{" "}
+          <code className="text-white/80">npx prisma db push</code> и <code className="text-white/80">npm run db:seed</code>
+          , затем перезапустите приложение.
         </p>
       ) : null}
 
