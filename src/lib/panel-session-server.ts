@@ -45,3 +45,18 @@ export function verifySession(token: string): SessionClaims | null {
 }
 
 export const SESSION_MAX_AGE_SEC = 60 * 60 * 24 * 14;
+
+/** Secure-cookie только при реальном HTTPS (или за TLS-терминатором с X-Forwarded-Proto). */
+export function requestIsHttps(request: Request): boolean {
+  const forwarded = request.headers.get("x-forwarded-proto");
+  if (forwarded) {
+    const p = forwarded.split(",")[0]?.trim().toLowerCase();
+    if (p === "https" || p === "http") return p === "https";
+  }
+  if (request.headers.get("x-forwarded-ssl") === "on") return true;
+  try {
+    return new URL(request.url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}

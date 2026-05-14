@@ -7,6 +7,7 @@ import {
   SESSION_MAX_AGE_SEC,
   signSession,
   getSessionSecret,
+  requestIsHttps,
 } from "@/lib/panel-session-server";
 import { isDatabaseConfigured } from "@/lib/auth-session-prisma";
 
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
     sameSite: "lax",
     path: "/",
     maxAge: SESSION_MAX_AGE_SEC,
-    secure: process.env.NODE_ENV === "production",
+    secure: requestIsHttps(request),
   });
   return res;
 }
