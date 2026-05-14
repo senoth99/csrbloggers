@@ -85,7 +85,7 @@ function InfoBlock({
     </div>
   );
 }
-const PRODUCTS_API_URL = "https://api.cashercollection.com/products";
+const PRODUCTS_API_URL = "/api/casher-products";
 const REFRESH_EVERY_MS = 30 * 60 * 1000;
 const API_ORIGIN = "https://api.cashercollection.com";
 type ContractorTab = "availability" | "deliveries" | "integrations" | "links";

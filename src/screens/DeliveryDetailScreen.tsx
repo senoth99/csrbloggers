@@ -13,7 +13,7 @@ import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { abbreviateFio } from "@/lib/employee-utils";
 import { selectNativeChevronPad } from "@/screens/dashboard-shared";
 
-const PRODUCTS_API_URL = "https://api.cashercollection.com/products";
+const PRODUCTS_API_URL = "/api/casher-products";
 const API_ORIGIN = "https://api.cashercollection.com";
 
 function statusClass(status: DeliveryStatus): string {

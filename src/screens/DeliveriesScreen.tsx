@@ -35,7 +35,7 @@ function deliveryStatusIndex(s: DeliveryStatus): number {
   const i = STATUS_ORDER.indexOf(s);
   return i >= 0 ? i : 0;
 }
-const PRODUCTS_API_URL = "https://api.cashercollection.com/products";
+const PRODUCTS_API_URL = "/api/casher-products";
 const API_ORIGIN = "https://api.cashercollection.com";
 
 const CDEK_REFRESH_INTERVAL_MS = 30 * 60 * 1000;
