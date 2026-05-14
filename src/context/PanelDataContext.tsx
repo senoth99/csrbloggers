@@ -29,7 +29,10 @@ import type {
 import { DEFAULT_SOCIAL_OPTIONS, normalizeIntegrationStatus } from "@/types/panel-data";
 import { createPanelId } from "@/lib/id";
 import { normalizeTelegramUsername } from "@/lib/employee-utils";
-import { normalizeIntegrationPublicLink } from "@/lib/integration-link";
+import {
+  integrationPublicLinkHref,
+  normalizeIntegrationPublicLink,
+} from "@/lib/integration-link";
 import {
   deliveryNotifyTaskKey,
   integrationReachTaskKey,
@@ -439,6 +442,8 @@ interface PanelDataContextValue {
       status?: ContractorStatus;
       rating?: number;
       note?: string;
+      /** Именованные ссылки (как в карточке → «Ссылки»), создаются вместе с контрагентом */
+      initialLinks?: { title: string; url: string }[];
     }) => void;
   updateContractor: (
     id: string,
@@ -725,6 +730,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       status?: ContractorStatus;
       rating?: number;
       note?: string;
+      initialLinks?: { title: string; url: string }[];
     }) => {
       const n = input.name.trim();
       if (!n || !isAdminRef.current) return;
@@ -737,14 +743,29 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         const sc = input.sizeCategory;
         const sizeCategory =
           sc === "micro" || sc === "middle" || sc === "large" ? sc : undefined;
+        const newId = createPanelId();
+        const now = new Date().toISOString();
+        const linkRows: ContractorLink[] = [];
+        for (const row of input.initialLinks ?? []) {
+          const title = row.title?.trim();
+          const urlRaw = normalizeIntegrationPublicLink(row.url);
+          if (!title || !urlRaw || !integrationPublicLinkHref(urlRaw)) continue;
+          linkRows.push({
+            id: createPanelId(),
+            contractorId: newId,
+            title,
+            url: urlRaw,
+            createdAt: now,
+          });
+        }
         return {
           ...prev,
           contractors: [
             ...prev.contractors,
             {
-              id: createPanelId(),
+              id: newId,
               name: n,
-              createdAt: new Date().toISOString(),
+              createdAt: now,
               contactPerson: input.contactPerson?.trim() ?? "",
               ...(input.city?.trim() ? { city: input.city.trim() } : {}),
               ...(input.promoCode?.trim() ? { promoCode: input.promoCode.trim() } : {}),
@@ -756,6 +777,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
               note: input.note?.trim() ?? "",
             },
           ],
+          contractorLinks: [...prev.contractorLinks, ...linkRows],
         };
       });
     },

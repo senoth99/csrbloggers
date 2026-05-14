@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent } from "react";
-import { Plus, Search, X } from "lucide-react";
+import { Plus, Search, Trash2, X } from "lucide-react";
 import { usePanelData } from "@/context/PanelDataContext";
 import { ContractorRatingBadge } from "@/components/ContractorRatingBadge";
 import { SortableTh } from "@/components/SortableTh";
@@ -10,6 +10,11 @@ import { computeContractorRating10 } from "@/lib/contractor-rating";
 import { useTableSort } from "@/hooks/useTableSort";
 import { nicheChoiceCaption } from "@/lib/niche-display";
 import { compareNumbers, compareStringsRu } from "@/lib/table-sort";
+import { createPanelId } from "@/lib/id";
+import {
+  integrationPublicLinkHref,
+  normalizeIntegrationPublicLink,
+} from "@/lib/integration-link";
 import {
   CONTRACTOR_SIZE_CATEGORY_LABELS,
   CONTRACTOR_SIZE_CATEGORIES,
@@ -31,6 +36,8 @@ type ContractorSortKey =
   | "niche"
   | "sizeCategory";
 
+type CreateLinkDraft = { rowId: string; socialNetworkId: string; url: string };
+
 export function ContractorsScreen() {
   const router = useRouter();
   const { sort, toggleSort, sortKey, sortDir } = useTableSort<ContractorSortKey>();
@@ -39,6 +46,7 @@ export function ContractorsScreen() {
     integrations,
     contractorItems,
     nicheOptions,
+    socialOptions,
     isAdmin,
     addContractor,
   } = usePanelData();
@@ -50,6 +58,7 @@ export function ContractorsScreen() {
   const [viralityInput, setViralityInput] = useState("");
   const [nicheIdInput, setNicheIdInput] = useState("");
   const [sizeCategoryInput, setSizeCategoryInput] = useState<string>("");
+  const [linkDrafts, setLinkDrafts] = useState<CreateLinkDraft[]>([]);
   const [tableSearch, setTableSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused">("all");
 
@@ -71,6 +80,39 @@ export function ContractorsScreen() {
     return map;
   }, [contractors, integrations, contractorItems]);
 
+  function openCreateModal() {
+    setLinkDrafts(
+      socialOptions.length > 0
+        ? [
+            {
+              rowId: createPanelId(),
+              socialNetworkId: socialOptions[0].id,
+              url: "",
+            },
+          ]
+        : [],
+    );
+    setIsCreateOpen(true);
+  }
+
+  function addLinkDraftRow() {
+    const first = socialOptions[0]?.id ?? "";
+    setLinkDrafts((prev) => [
+      ...prev,
+      { rowId: createPanelId(), socialNetworkId: first, url: "" },
+    ]);
+  }
+
+  function removeLinkDraftRow(rowId: string) {
+    setLinkDrafts((prev) => prev.filter((r) => r.rowId !== rowId));
+  }
+
+  function updateLinkDraft(rowId: string, patch: Partial<Pick<CreateLinkDraft, "socialNetworkId" | "url">>) {
+    setLinkDrafts((prev) =>
+      prev.map((r) => (r.rowId === rowId ? { ...r, ...patch } : r)),
+    );
+  }
+
   function handleAdd(e: FormEvent) {
     e.preventDefault();
     if (!fullName.trim() || !nickname.trim()) return;
@@ -78,6 +120,15 @@ export function ContractorsScreen() {
       sizeCategoryInput === "micro" ||
       sizeCategoryInput === "middle" ||
       sizeCategoryInput === "large";
+    const initialLinks = linkDrafts
+      .map((row) => {
+        const label =
+          socialOptions.find((o) => o.id === row.socialNetworkId)?.label?.trim() || "Ссылка";
+        const raw = normalizeIntegrationPublicLink(row.url);
+        if (!raw || !integrationPublicLinkHref(raw)) return null;
+        return { title: label, url: raw };
+      })
+      .filter((x): x is { title: string; url: string } => x !== null);
     addContractor({
       name: nickname,
       contactPerson: fullName,
@@ -86,6 +137,7 @@ export function ContractorsScreen() {
       ...(viralityInput.trim() ? { virality: viralityInput.trim() } : {}),
       ...(nicheIdInput.trim() ? { nicheId: nicheIdInput.trim() } : {}),
       ...(hasSize ? { sizeCategory: sizeCategoryInput } : {}),
+      ...(initialLinks.length > 0 ? { initialLinks } : {}),
     });
     setFullName("");
     setNickname("");
@@ -94,6 +146,7 @@ export function ContractorsScreen() {
     setViralityInput("");
     setNicheIdInput("");
     setSizeCategoryInput("");
+    setLinkDrafts([]);
     setIsCreateOpen(false);
   }
 
@@ -208,7 +261,7 @@ export function ContractorsScreen() {
         {isAdmin && (
           <button
             type="button"
-            onClick={() => setIsCreateOpen(true)}
+            onClick={openCreateModal}
             className={primaryActionButtonClass}
           >
             <Plus className="h-4 w-4" strokeWidth={1.5} />
@@ -440,6 +493,82 @@ export function ContractorsScreen() {
                   className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
                 />
               </label>
+
+              {socialOptions.length > 0 ? (
+                <div className="space-y-2 border border-app-fg/10 bg-app-fg/[0.02] p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs uppercase tracking-wider text-app-fg/55">
+                      Соцсети
+                    </span>
+                    <button
+                      type="button"
+                      onClick={addLinkDraftRow}
+                      className="inline-flex items-center gap-1 border border-app-fg/20 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-accent/40"
+                    >
+                      <Plus className="h-3 w-3" strokeWidth={2} />
+                      Ещё площадка
+                    </button>
+                  </div>
+                  <p className="text-[11px] leading-snug text-app-fg/45">
+                    Необязательно. Укажите ссылку на профиль (https://… или домен). Пустые строки
+                    не сохраняются.
+                  </p>
+                  {linkDrafts.length === 0 ? (
+                    <button
+                      type="button"
+                      onClick={addLinkDraftRow}
+                      className="w-full border border-dashed border-app-fg/20 py-2 text-xs text-app-fg/55 transition hover:border-app-fg/35 hover:text-app-fg/75"
+                    >
+                      + Добавить ссылку
+                    </button>
+                  ) : (
+                    <ul className="space-y-3">
+                      {linkDrafts.map((row) => (
+                        <li
+                          key={row.rowId}
+                          className="flex flex-col gap-2 sm:flex-row sm:items-end sm:gap-2"
+                        >
+                          <label className="block min-w-0 flex-1 text-[10px] font-semibold uppercase tracking-wider text-app-fg/50">
+                            Площадка
+                            <select
+                              value={row.socialNetworkId}
+                              onChange={(e) =>
+                                updateLinkDraft(row.rowId, { socialNetworkId: e.target.value })
+                              }
+                              className={`mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2 ${selectNativeChevronPad}`}
+                            >
+                              {socialOptions.map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block min-w-0 flex-[2] text-[10px] font-semibold uppercase tracking-wider text-app-fg/50">
+                            Ссылка
+                            <input
+                              value={row.url}
+                              onChange={(e) => updateLinkDraft(row.rowId, { url: e.target.value })}
+                              placeholder="instagram.com/…"
+                              className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                              autoComplete="off"
+                              spellCheck={false}
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={() => removeLinkDraftRow(row.rowId)}
+                            className="inline-flex shrink-0 items-center justify-center gap-1 self-end border border-app-fg/15 px-2.5 py-2 text-app-fg/55 transition hover:border-red-400/40 hover:text-red-300 sm:self-auto"
+                            aria-label="Удалить строку"
+                          >
+                            <Trash2 className="h-4 w-4" strokeWidth={1.5} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
 
               <label className="block text-xs uppercase tracking-wider text-app-fg/55">
                 Город
