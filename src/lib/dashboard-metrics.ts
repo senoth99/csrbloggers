@@ -1,4 +1,5 @@
 import type { Delivery, Integration } from "@/types/panel-data";
+import { isAgreementIntegrationStatus, isPublishedIntegrationStatus } from "@/types/panel-data";
 import { computeCpmRub } from "@/lib/integration-metrics";
 
 export type YearMonth = { year: number; month: number };
@@ -47,14 +48,24 @@ export function integrationsCreatedInMonth(
   return integrations.filter((i) => isoInYearMonth(i.createdAt, ym));
 }
 
-/** Договорённости: интеграции, созданные в месяце, в статусе completed или active */
+/** Договорённости: созданные в месяце со статусом «черновик» или «перенос» */
 export function agreementsCreatedInMonth(
   integrations: Integration[],
   ym: YearMonth,
 ): number {
-  return integrationsCreatedInMonth(integrations, ym).filter(
-    (i) => i.status === "completed" || i.status === "active",
+  return integrationsCreatedInMonth(integrations, ym).filter((i) =>
+    isAgreementIntegrationStatus(i.status),
   ).length;
+}
+
+/** Опубликованные интеграции с датой создания в календарном месяце */
+export function integrationsPublishedInMonth(
+  integrations: Integration[],
+  ym: YearMonth,
+): Integration[] {
+  return integrationsCreatedInMonth(integrations, ym).filter((i) =>
+    isPublishedIntegrationStatus(i.status),
+  );
 }
 
 /**

@@ -6,12 +6,13 @@ import { useAuth } from "@/context/AuthContext";
 import { CasherLogoSpin } from "@/components/CasherLogoSpin";
 
 function LoginForm() {
-  const { login, hydrated, isAuthenticated } = useAuth();
+  const { login, hydrated, isAuthenticated, authBackendError } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loginField, setLoginField] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const nextPath = searchParams?.get("next") || "/dashboard";
 
@@ -27,9 +28,11 @@ function LoginForm() {
     const l = loginField.trim().replace(/^@+/, "").toLowerCase();
     if (!l || !password) return;
     setBusy(true);
+    setLoginError(null);
     try {
       const ok = await login(l, password);
       if (ok) router.replace(nextPath.startsWith("/") ? nextPath : "/dashboard");
+      else setLoginError("Неверный логин или пароль.");
     } finally {
       setBusy(false);
     }
@@ -63,6 +66,19 @@ function LoginForm() {
       <CasherLogoSpin className="mb-7" />
 
       <h1 className="text-2xl font-bold tracking-tight text-white sm:text-[1.65rem]">Привет)</h1>
+
+      {authBackendError ? (
+        <p className="mt-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-left text-xs leading-relaxed text-amber-100/90">
+          {authBackendError} Задайте в <code className="text-white/80">.env.local</code> переменные{" "}
+          <code className="text-white/80">DATABASE_URL</code> и <code className="text-white/80">SESSION_SECRET</code>
+          , затем выполните{" "}
+          <code className="text-white/80">npx prisma db push</code> и <code className="text-white/80">npm run db:seed</code>.
+        </p>
+      ) : null}
+
+      {loginError ? (
+        <p className="mt-4 text-center text-sm text-red-400/90">{loginError}</p>
+      ) : null}
 
       {busy ? (
         <div className="mt-5 flex justify-center gap-1.5" aria-hidden>

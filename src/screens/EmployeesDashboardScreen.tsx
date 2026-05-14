@@ -137,7 +137,7 @@ export function EmployeesDashboardScreen() {
       return;
     }
     removeEmployee(emp.id);
-    if (loginKey) removeUserAccess(loginKey);
+    if (loginKey) void removeUserAccess(loginKey);
   }
   return (
     <div className="space-y-8 pb-10">

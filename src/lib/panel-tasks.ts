@@ -1,4 +1,5 @@
 import type { Contractor, Delivery, Integration } from "@/types/panel-data";
+import { isPublishedIntegrationStatus } from "@/types/panel-data";
 import { formatIntegrationReleaseLine } from "@/lib/format-ru";
 import {
   addCalendarDaysLocal,
@@ -115,6 +116,7 @@ export function buildOpenTasks(params: {
   }
 
   for (const row of params.integrations) {
+    if (!isPublishedIntegrationStatus(row.status)) continue;
     const rd = row.releaseDate?.trim();
     if (!rd) continue;
     const opens = integrationReachTaskOpensAt(rd);
@@ -141,7 +143,7 @@ export function buildOpenTasks(params: {
   }
 
   for (const row of params.integrations) {
-    if (row.status === "completed") continue;
+    if (!isPublishedIntegrationStatus(row.status)) continue;
     const assignee = row.assignedEmployeeId?.trim();
     if (!assignee) continue;
     const releaseMs = localReleaseDateTimeMs(row.releaseDate, row.releaseTime);

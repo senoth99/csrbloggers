@@ -1,4 +1,42 @@
-export type IntegrationStatus = "draft" | "active" | "paused" | "completed";
+/** Статусы интеграции (slug → подписи в INTEGRATION_STATUS_LABELS) */
+export type IntegrationStatus =
+  | "draft"
+  | "published"
+  | "postponed"
+  | "returned"
+  | "exchange";
+
+const LEGACY_INTEGRATION_STATUS: Record<string, IntegrationStatus | undefined> = {
+  active: "published",
+  paused: "postponed",
+  completed: "exchange",
+};
+
+/** Нормализация из JSON / старых данных (active/paused/completed) */
+export function normalizeIntegrationStatus(raw: unknown): IntegrationStatus {
+  const s = typeof raw === "string" ? raw.trim() : "";
+  if (
+    s === "draft" ||
+    s === "published" ||
+    s === "postponed" ||
+    s === "returned" ||
+    s === "exchange"
+  ) {
+    return s;
+  }
+  return LEGACY_INTEGRATION_STATUS[s] ?? "draft";
+}
+
+/** Договорённость: черновик или перенос */
+export function isAgreementIntegrationStatus(s: IntegrationStatus): boolean {
+  return s === "draft" || s === "postponed";
+}
+
+/** Опубликованная интеграция (учёт в KPI «интеграции») */
+export function isPublishedIntegrationStatus(s: IntegrationStatus): boolean {
+  return s === "published";
+}
+
 export type ContractorStatus = "active" | "paused";
 export type DeliveryStatus =
   | "created"
@@ -9,16 +47,18 @@ export type DeliveryStatus =
 
 export const INTEGRATION_STATUS_LABELS: Record<IntegrationStatus, string> = {
   draft: "Черновик",
-  active: "В работе",
-  paused: "Пауза",
-  completed: "Завершена",
+  published: "Опубликовано",
+  postponed: "Перенос",
+  returned: "Возврат",
+  exchange: "Обмен",
 };
 
 export const INTEGRATION_STATUSES: IntegrationStatus[] = [
   "draft",
-  "active",
-  "paused",
-  "completed",
+  "published",
+  "postponed",
+  "returned",
+  "exchange",
 ];
 
 /** Ниша контрагента: список задаётся админом в админке */
@@ -219,9 +259,10 @@ export type AddDeliveryInput = {
 /** Только три цвета приложения: чёрный, белый (+opacity в классах), акцент */
 export const STATUS_BADGE_CLASS: Record<IntegrationStatus, string> = {
   draft: "border border-transparent bg-app-fg/[0.1] text-app-fg/75",
-  active: "border border-transparent bg-app-accent text-app-fg",
-  paused: "border-2 border-app-accent bg-app-bg text-app-fg",
-  completed: "border border-transparent bg-app-accent text-app-fg",
+  published: "border border-transparent bg-app-accent text-app-fg",
+  postponed: "border-2 border-app-accent bg-app-bg text-app-fg",
+  returned: "border border-transparent bg-app-fg/[0.14] text-app-fg/80",
+  exchange: "border border-transparent bg-app-fg/[0.2] text-app-fg",
 };
 
 export const CHANNEL_BADGE_CLASS =

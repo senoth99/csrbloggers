@@ -27,8 +27,10 @@ export function Header() {
         <button
           type="button"
           onClick={() => {
-            logout();
-            router.replace("/login");
+            void (async () => {
+              await logout();
+              router.replace("/login");
+            })();
           }}
           className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1.5 border border-app-fg/15 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/35 hover:text-app-fg sm:right-3 sm:px-3 sm:text-xs"
           aria-label="Выйти из панели"

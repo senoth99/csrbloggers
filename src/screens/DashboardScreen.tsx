@@ -18,6 +18,7 @@ import {
   formatYearMonthString,
   integrationReachByCalendarDayInMonth,
   integrationsCreatedInMonth,
+  integrationsPublishedInMonth,
   monthOverMonthTrend,
   shiftYearMonth,
   sumIntegrationReach,
@@ -92,37 +93,38 @@ export function DashboardScreen() {
     [integrations, ym],
   );
 
-  const integrationsMonthPrev = useMemo(
-    () => integrationsCreatedInMonth(integrations, ymPrev),
-    [integrations, ymPrev],
-  );
-
   const deliveriesMonth = useMemo(
     () => deliveriesCreatedInMonth(deliveries, ym),
     [deliveries, ym],
   );
 
   const kpi = useMemo(() => {
-    const reach = sumIntegrationReach(integrationsMonth);
-    const reachPrev = sumIntegrationReach(integrationsMonthPrev);
-    const promo = sumPromoActivations(integrationsMonth);
-    const promoPrev = sumPromoActivations(integrationsMonthPrev);
+    const pubMonth = integrationsPublishedInMonth(integrations, ym);
+    const pubMonthPrev = integrationsPublishedInMonth(integrations, ymPrev);
+    const reach = sumIntegrationReach(pubMonth);
+    const reachPrev = sumIntegrationReach(pubMonthPrev);
+    const promo = sumPromoActivations(pubMonth);
+    const promoPrev = sumPromoActivations(pubMonthPrev);
     const agreements = agreementsCreatedInMonth(integrations, ym);
     const agreementsPrev = agreementsCreatedInMonth(integrations, ymPrev);
     return {
       reach,
       reachPrev,
-      count: integrationsMonth.length,
-      countPrev: integrationsMonthPrev.length,
+      count: pubMonth.length,
+      countPrev: pubMonthPrev.length,
       agreements,
       agreementsPrev,
       promo,
       promoPrev,
     };
-  }, [integrations, integrationsMonth, integrationsMonthPrev, ym, ymPrev]);
+  }, [integrations, ym, ymPrev]);
 
   const reachByDay = useMemo(
-    () => integrationReachByCalendarDayInMonth(integrations, ym),
+    () =>
+      integrationReachByCalendarDayInMonth(
+        integrations.filter((i) => i.status === "published"),
+        ym,
+      ),
     [integrations, ym],
   );
 

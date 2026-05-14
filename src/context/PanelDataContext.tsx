@@ -26,7 +26,7 @@ import type {
   NicheOption,
   SocialOption,
 } from "@/types/panel-data";
-import { DEFAULT_SOCIAL_OPTIONS } from "@/types/panel-data";
+import { DEFAULT_SOCIAL_OPTIONS, normalizeIntegrationStatus } from "@/types/panel-data";
 import { createPanelId } from "@/lib/id";
 import { normalizeTelegramUsername } from "@/lib/employee-utils";
 import { normalizeIntegrationPublicLink } from "@/lib/integration-link";
@@ -62,71 +62,76 @@ function slugify(raw: string): string {
   return s || `net-${Date.now()}`;
 }
 
+/** Разбор произвольного JSON (localStorage или ответ сервера) в черновик StoredShape. */
+function coercePanelStoredShape(parsed: unknown): StoredShape | null {
+  const p = parsed as StoredShape;
+  if (!p || typeof p !== "object") return null;
+  return {
+    contractors: Array.isArray(p.contractors) ? p.contractors : [],
+    integrations: Array.isArray(p.integrations) ? p.integrations : [],
+    socialOptions: Array.isArray(p.socialOptions) ? p.socialOptions : [],
+    nicheOptions: Array.isArray((p as { nicheOptions?: unknown }).nicheOptions)
+      ? ((p as { nicheOptions: NicheOption[] }).nicheOptions ?? []).filter(
+          (row): row is NicheOption =>
+            !!row &&
+            typeof row === "object" &&
+            typeof (row as NicheOption).id === "string" &&
+            typeof (row as NicheOption).label === "string",
+        )
+      : [],
+    contractorItems: Array.isArray((p as { contractorItems?: unknown }).contractorItems)
+      ? ((p as { contractorItems: ContractorItem[] }).contractorItems ?? [])
+      : [],
+    contractorLinks: Array.isArray((p as { contractorLinks?: unknown }).contractorLinks)
+      ? ((p as { contractorLinks: ContractorLink[] }).contractorLinks ?? []).filter(
+          (row): row is ContractorLink =>
+            !!row &&
+            typeof row === "object" &&
+            typeof (row as ContractorLink).id === "string" &&
+            typeof (row as ContractorLink).contractorId === "string" &&
+            typeof (row as ContractorLink).title === "string" &&
+            typeof (row as ContractorLink).url === "string",
+        )
+      : [],
+    deliveries: Array.isArray((p as { deliveries?: unknown }).deliveries)
+      ? ((p as { deliveries: Delivery[] }).deliveries ?? [])
+      : [],
+    employees: Array.isArray((p as { employees?: unknown }).employees)
+      ? ((p as { employees: Employee[] }).employees ?? [])
+      : [],
+    completedTaskKeys: Array.isArray((p as { completedTaskKeys?: unknown }).completedTaskKeys)
+      ? ((p as { completedTaskKeys: string[] }).completedTaskKeys ?? []).filter(
+          (x): x is string => typeof x === "string",
+        )
+      : [],
+    promocodeSnapshots: Array.isArray(
+      (p as { promocodeSnapshots?: unknown }).promocodeSnapshots,
+    )
+      ? ((p as {
+          promocodeSnapshots: Array<{ codeKey?: unknown; t?: unknown; activations?: unknown }>;
+        }).promocodeSnapshots ?? [])
+          .map((row) => {
+            const codeKey =
+              typeof row.codeKey === "string" ? row.codeKey.trim().toLowerCase() : "";
+            const t = typeof row.t === "number" && Number.isFinite(row.t) ? row.t : NaN;
+            const activations =
+              typeof row.activations === "number" && Number.isFinite(row.activations)
+                ? row.activations
+                : NaN;
+            if (!codeKey || !Number.isFinite(t) || !Number.isFinite(activations)) return null;
+            return { codeKey, t, activations };
+          })
+          .filter(Boolean) as Array<{ codeKey: string; t: number; activations: number }>
+      : [],
+  };
+}
+
 function loadStored(): StoredShape | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    const p = JSON.parse(raw) as StoredShape;
-    if (!p || typeof p !== "object") return null;
-    return {
-      contractors: Array.isArray(p.contractors) ? p.contractors : [],
-      integrations: Array.isArray(p.integrations) ? p.integrations : [],
-      socialOptions: Array.isArray(p.socialOptions) ? p.socialOptions : [],
-      nicheOptions: Array.isArray((p as { nicheOptions?: unknown }).nicheOptions)
-        ? ((p as { nicheOptions: NicheOption[] }).nicheOptions ?? []).filter(
-            (row): row is NicheOption =>
-              !!row &&
-              typeof row === "object" &&
-              typeof (row as NicheOption).id === "string" &&
-              typeof (row as NicheOption).label === "string",
-          )
-        : [],
-      contractorItems: Array.isArray((p as { contractorItems?: unknown }).contractorItems)
-        ? ((p as { contractorItems: ContractorItem[] }).contractorItems ?? [])
-        : [],
-      contractorLinks: Array.isArray((p as { contractorLinks?: unknown }).contractorLinks)
-        ? ((p as { contractorLinks: ContractorLink[] }).contractorLinks ?? []).filter(
-            (row): row is ContractorLink =>
-              !!row &&
-              typeof row === "object" &&
-              typeof (row as ContractorLink).id === "string" &&
-              typeof (row as ContractorLink).contractorId === "string" &&
-              typeof (row as ContractorLink).title === "string" &&
-              typeof (row as ContractorLink).url === "string",
-          )
-        : [],
-      deliveries: Array.isArray((p as { deliveries?: unknown }).deliveries)
-        ? ((p as { deliveries: Delivery[] }).deliveries ?? [])
-        : [],
-      employees: Array.isArray((p as { employees?: unknown }).employees)
-        ? ((p as { employees: Employee[] }).employees ?? [])
-        : [],
-      completedTaskKeys: Array.isArray((p as { completedTaskKeys?: unknown }).completedTaskKeys)
-        ? ((p as { completedTaskKeys: string[] }).completedTaskKeys ?? []).filter(
-            (x): x is string => typeof x === "string",
-          )
-        : [],
-      promocodeSnapshots: Array.isArray(
-        (p as { promocodeSnapshots?: unknown }).promocodeSnapshots,
-      )
-        ? ((p as {
-            promocodeSnapshots: Array<{ codeKey?: unknown; t?: unknown; activations?: unknown }>;
-          }).promocodeSnapshots ?? [])
-            .map((row) => {
-              const codeKey =
-                typeof row.codeKey === "string" ? row.codeKey.trim().toLowerCase() : "";
-              const t = typeof row.t === "number" && Number.isFinite(row.t) ? row.t : NaN;
-              const activations =
-                typeof row.activations === "number" && Number.isFinite(row.activations)
-                  ? row.activations
-                  : NaN;
-              if (!codeKey || !Number.isFinite(t) || !Number.isFinite(activations)) return null;
-              return { codeKey, t, activations };
-            })
-            .filter(Boolean) as Array<{ codeKey: string; t: number; activations: number }>
-        : [],
-    };
+    return coercePanelStoredShape(JSON.parse(raw));
   } catch {
     return null;
   }
@@ -272,6 +277,7 @@ function migrateIntegration(
   const comment = integrationCommentFromRow(row);
   const result: Integration = {
     ...row,
+    status: normalizeIntegrationStatus(row.status),
     createdAt: row.createdAt ?? new Date().toISOString(),
     title: row.title ?? `Интеграция · ${socialLabel}`,
     amount: parseAmount((row as { amount?: unknown }).amount),
@@ -334,8 +340,8 @@ function parseReleaseTimeInput(raw: string | undefined): string | undefined {
   return `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
 }
 
-function getInitialState(): StoredShape {
-  const empty: StoredShape = {
+function emptyStoredShape(): StoredShape {
+  return {
     contractors: [],
     integrations: [],
     socialOptions: [...DEFAULT_SOCIAL_OPTIONS],
@@ -347,14 +353,9 @@ function getInitialState(): StoredShape {
     completedTaskKeys: [],
     promocodeSnapshots: [],
   };
-  if (typeof window === "undefined") {
-    return empty;
-  }
-  const loaded = loadStored();
-  if (!loaded) {
-    saveStored(empty);
-    return empty;
-  }
+}
+
+function normalizeIncomingPanelData(loaded: StoredShape): StoredShape {
   const social = normalizeSocial(loaded.socialOptions);
   const nicheOptions = normalizeNicheOptions(loaded.nicheOptions ?? []);
   const employeesRaw = Array.isArray(loaded.employees) ? loaded.employees : [];
@@ -398,10 +399,23 @@ function getInitialState(): StoredShape {
     completedTaskKeys,
     promocodeSnapshots: loaded.promocodeSnapshots ?? [],
   };
-  if (strippedLegacyDemo) {
+  if (strippedLegacyDemo && typeof window !== "undefined") {
     saveStored(result);
   }
   return result;
+}
+
+function getInitialState(): StoredShape {
+  const empty = emptyStoredShape();
+  if (typeof window === "undefined") {
+    return empty;
+  }
+  const loaded = loadStored();
+  if (!loaded) {
+    saveStored(empty);
+    return empty;
+  }
+  return normalizeIncomingPanelData(loaded);
 }
 
 interface PanelDataContextValue {
@@ -544,12 +558,80 @@ const EMPTY_STORED: StoredShape = {
 };
 
 export function PanelDataProvider({ children }: { children: ReactNode }) {
-  const { role, currentLogin, isAuthenticated } = useAuth();
+  const { role, currentLogin, isAuthenticated, hydrated } = useAuth();
   const isAdmin = role === "admin" || role === "superadmin";
   const isAdminRef = useRef(isAdmin);
   isAdminRef.current = isAdmin;
 
   const [data, setData] = useState<StoredShape>(EMPTY_STORED);
+  const dataRef = useRef(data);
+  dataRef.current = data;
+
+  const serverRevisionRef = useRef<number | null>(null);
+  const pendingSaveRef = useRef(false);
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const applyServerPayload = useCallback((bodyData: unknown, revision: number) => {
+    const coerced = coercePanelStoredShape(bodyData) ?? EMPTY_STORED;
+    const normalized = normalizeIncomingPanelData(coerced);
+    setData(normalized);
+    saveStored(normalized);
+    serverRevisionRef.current = revision;
+  }, []);
+
+  const pushSnapshotToServer = useCallback(
+    async (snapshot: StoredShape): Promise<boolean> => {
+      if (!isAuthenticated) return false;
+      pendingSaveRef.current = true;
+      try {
+        const base = serverRevisionRef.current ?? 0;
+        const res = await fetch("/api/panel-data", {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Panel-Base-Revision": String(base),
+          },
+          body: JSON.stringify(snapshot),
+        });
+        if (res.status === 200) {
+          const j = (await res.json()) as { revision?: unknown };
+          if (typeof j.revision === "number") {
+            serverRevisionRef.current = j.revision;
+          }
+          return true;
+        }
+        if (res.status === 409) {
+          const j = (await res.json()) as { revision?: unknown; data?: unknown };
+          const r = typeof j.revision === "number" ? j.revision : 0;
+          applyServerPayload(j.data ?? null, r);
+          return false;
+        }
+        if (res.status === 401 || res.status === 403) {
+          console.warn("[panel-data] отказ при сохранении (сессия)");
+        }
+        return false;
+      } catch (e) {
+        console.error("[panel-data] сохранение не удалось", e);
+        return false;
+      } finally {
+        pendingSaveRef.current = false;
+      }
+    },
+    [applyServerPayload, isAuthenticated],
+  );
+
+  const scheduleServerSave = useCallback(
+    (next: StoredShape) => {
+      if (!isAuthenticated) return;
+      if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = setTimeout(() => {
+        flushTimerRef.current = null;
+        void pushSnapshotToServer(next);
+      }, 650);
+    },
+    [isAuthenticated, pushSnapshotToServer],
+  );
 
   useEffect(() => {
     try {
@@ -560,13 +642,76 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const patch = useCallback((fn: (prev: StoredShape) => StoredShape) => {
-    setData((prev) => {
-      const next = fn(prev);
-      saveStored(next);
-      return next;
-    });
-  }, []);
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated) return;
+    const ac = new AbortController();
+    (async () => {
+      try {
+        const res = await fetch("/api/panel-data", {
+          credentials: "include",
+          signal: ac.signal,
+        });
+        if (ac.signal.aborted) return;
+        if (res.status === 401 || res.status === 403) {
+          console.warn("[panel-data] нет сессии при загрузке снимка");
+          return;
+        }
+        if (res.status === 503 || !res.ok) return;
+        const body = (await res.json()) as { revision?: unknown; data?: unknown };
+        const revision = typeof body.revision === "number" ? body.revision : 0;
+        if (ac.signal.aborted) return;
+        if (body.data == null && revision === 0) {
+          const local = getInitialState();
+          setData(local);
+          serverRevisionRef.current = 0;
+          queueMicrotask(() => {
+            void pushSnapshotToServer(local);
+          });
+          return;
+        }
+        applyServerPayload(body.data, revision);
+      } catch (e) {
+        if (ac.signal.aborted) return;
+        console.error("[panel-data] загрузка с сервера", e);
+      }
+    })();
+    return () => ac.abort();
+  }, [hydrated, isAuthenticated, applyServerPayload, pushSnapshotToServer]);
+
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated) return;
+    const id = window.setInterval(() => {
+      if (pendingSaveRef.current) return;
+      if (document.visibilityState === "hidden") return;
+      void (async () => {
+        try {
+          const res = await fetch("/api/panel-data", { credentials: "include" });
+          if (!res.ok) return;
+          const body = (await res.json()) as { revision?: unknown; data?: unknown };
+          const revision = typeof body.revision === "number" ? body.revision : 0;
+          const localRev = serverRevisionRef.current ?? 0;
+          if (revision <= localRev) return;
+          if (body.data == null) return;
+          applyServerPayload(body.data, revision);
+        } catch {
+          /* ignore */
+        }
+      })();
+    }, 42_000);
+    return () => clearInterval(id);
+  }, [hydrated, isAuthenticated, applyServerPayload]);
+
+  const patch = useCallback(
+    (fn: (prev: StoredShape) => StoredShape) => {
+      setData((prev) => {
+        const next = fn(prev);
+        saveStored(next);
+        scheduleServerSave(next);
+        return next;
+      });
+    },
+    [scheduleServerSave],
+  );
 
   const addContractor = useCallback(
     (input: {
@@ -859,7 +1004,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       if (!contractorId || !socialPick || !title) return null;
 
       const newId = createPanelId();
-      const status = input.status ?? "draft";
+      const status = normalizeIntegrationStatus(input.status ?? "draft");
       const releaseDate = parseReleaseDateInput(input.releaseDate);
       const releaseTime = parseReleaseTimeInput(input.releaseTime);
       const budget = parseNonNegativeOptional(input.budget);
@@ -946,7 +1091,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           next.socialNetworkId = updates.socialNetworkId;
         }
         if (updates.status !== undefined) {
-          next.status = updates.status;
+          next.status = normalizeIntegrationStatus(updates.status);
         }
         if (updates.title !== undefined) {
           const t = updates.title.trim();
@@ -1021,7 +1166,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
             completedTaskKeys = [...completedTaskKeys, rk];
           }
         }
-        if (next.status === "completed") {
+        if (next.status === "returned" || next.status === "exchange") {
           const vk = integrationReleaseVerifyTaskKey(id);
           if (!completedTaskKeys.includes(vk)) {
             completedTaskKeys = [...completedTaskKeys, vk];

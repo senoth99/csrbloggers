@@ -4,6 +4,10 @@ import { useMemo, type ReactNode } from "react";
 import { ArrowDown, ArrowUp } from "lucide-react";
 import type { Integration } from "@/types/panel-data";
 import {
+  isAgreementIntegrationStatus,
+  isPublishedIntegrationStatus,
+} from "@/types/panel-data";
+import {
   integrationsCreatedInMonth,
   monthOverMonthTrend,
   monthOverMonthTrendCpm,
@@ -76,7 +80,9 @@ function countIntegrationMonthByPlatform(
   rows: Integration[],
   platformId: string,
 ): number {
-  return rows.filter((i) => i.socialNetworkId === platformId).length;
+  return rows.filter(
+    (i) => i.socialNetworkId === platformId && isPublishedIntegrationStatus(i.status),
+  ).length;
 }
 
 function agreementsMonthByPlatform(
@@ -84,9 +90,7 @@ function agreementsMonthByPlatform(
   platformId: string,
 ): number {
   return rows.filter(
-    (i) =>
-      i.socialNetworkId === platformId &&
-      (i.status === "completed" || i.status === "active"),
+    (i) => i.socialNetworkId === platformId && isAgreementIntegrationStatus(i.status),
   ).length;
 }
 
@@ -316,7 +320,7 @@ export function DashboardGeneralReportTable({ ym, integrations }: Props) {
                 align="left"
                 onClick={() => toggleSort("agreements")}
               >
-                Договоренности
+                Договорённости
               </SortHeaderButton>
             </div>
           </div>

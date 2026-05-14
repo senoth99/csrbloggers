@@ -215,7 +215,7 @@ export function AdminScreen() {
                       {!isSuper ? (
                         <button
                           type="button"
-                          onClick={() => removeUserAccess(u.login)}
+                          onClick={() => void removeUserAccess(u.login)}
                           className="inline-flex items-center gap-1 border border-app-fg/15 px-3 py-1.5 text-xs text-app-fg/55 transition hover:border-app-fg/50"
                         >
                           <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />

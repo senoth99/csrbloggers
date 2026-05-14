@@ -46,6 +46,9 @@ import { parseYmdLocal } from "@/lib/task-deadline";
 const fieldClass =
   "w-full min-w-0 border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2";
 
+/** Фильтры над таблицей — подписи в капсе (как в макете) */
+const filterSelectClass = `${fieldClass} min-h-[44px] ${selectNativeChevronPad} uppercase tracking-[0.08em]`;
+
 function integrationTitleKey(title: string): string {
   return title.trim().toLowerCase().replace(/\s+/g, " ");
 }
@@ -519,7 +522,7 @@ export function PanelScreen() {
                 setStatusFilter(e.target.value === "all" ? "all" : (e.target.value as IntegrationStatus))
               }
               aria-label="Фильтр по статусу"
-              className={`${fieldClass} min-h-[44px] ${selectNativeChevronPad}`}
+              className={filterSelectClass}
             >
               <option value="all">Все статусы</option>
               {INTEGRATION_STATUSES.map((s) => (
@@ -532,7 +535,7 @@ export function PanelScreen() {
               value={platformFilter}
               onChange={(e) => setPlatformFilter(e.target.value)}
               aria-label="Фильтр по площадке"
-              className={`${fieldClass} min-h-[44px] ${selectNativeChevronPad}`}
+              className={filterSelectClass}
             >
               <option value="all">Все площадки</option>
               {socialOptions.map((o) => (
@@ -545,7 +548,7 @@ export function PanelScreen() {
               value={cityFilter}
               onChange={(e) => setCityFilter(e.target.value)}
               aria-label="Фильтр по городу контрагента"
-              className={`${fieldClass} min-h-[44px] ${selectNativeChevronPad}`}
+              className={filterSelectClass}
             >
               <option value="all">Все города</option>
               {showEmptyCityFilter ? (
@@ -561,7 +564,7 @@ export function PanelScreen() {
               value={employeeFilter}
               onChange={(e) => setEmployeeFilter(e.target.value)}
               aria-label="Фильтр по сотруднику"
-              className={`${fieldClass} min-h-[44px] ${selectNativeChevronPad}`}
+              className={filterSelectClass}
             >
               <option value="all">Все сотрудники</option>
               <option value="unassigned">Не назначен</option>
@@ -577,7 +580,7 @@ export function PanelScreen() {
               value={nicheFilter}
               onChange={(e) => setNicheFilter(e.target.value)}
               aria-label="Фильтр по нише контрагента"
-              className={`${fieldClass} min-h-[44px] ${selectNativeChevronPad}`}
+              className={filterSelectClass}
             >
               <option value="all">Все ниши</option>
               {showEmptyNicheFilter ? (
@@ -593,7 +596,7 @@ export function PanelScreen() {
               value={sizeCategoryFilter}
               onChange={(e) => setSizeCategoryFilter(e.target.value)}
               aria-label="Фильтр по категории контрагента"
-              className={`${fieldClass} min-h-[44px] ${selectNativeChevronPad}`}
+              className={filterSelectClass}
             >
               <option value="all">Все категории</option>
               {showEmptySizeCategoryFilter ? (
@@ -609,7 +612,7 @@ export function PanelScreen() {
               value={cooperationFilter}
               onChange={(e) => setCooperationFilter(e.target.value)}
               aria-label="Фильтр по условиям интеграции"
-              className={`${fieldClass} min-h-[44px] ${selectNativeChevronPad}`}
+              className={filterSelectClass}
             >
               <option value="all">Все условия</option>
               {showEmptyCooperationFilter ? (

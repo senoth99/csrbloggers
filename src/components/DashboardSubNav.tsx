@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-const links = [
+const baseLinks = [
   { href: "/dashboard", label: "Обзор", matchExact: true as boolean },
   { href: "/dashboard/integrations", label: "Интеграции", matchExact: false as boolean },
   { href: "/dashboard/deliveries", label: "Доставки", matchExact: false as boolean },
@@ -24,7 +24,7 @@ export function DashboardSubNav() {
       className="mb-6 flex min-w-0 max-w-full gap-1 overflow-x-auto overflow-y-hidden border-b border-app-fg/[0.08] pb-0 [-ms-overflow-style:none] [scrollbar-width:none] sm:mb-8 [&::-webkit-scrollbar]:hidden"
       style={{ WebkitOverflowScrolling: "touch" }}
     >
-      {links.map(({ href, label, matchExact }) => {
+      {baseLinks.map(({ href, label, matchExact }) => {
         const isActive = active(pathname, href, matchExact);
         return (
           <Link

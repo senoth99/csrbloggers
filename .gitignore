@@ -10,3 +10,12 @@ dist
 .env.test.local
 .env.production.local
 !.env.example
+
+# Локальная SQLite Prisma (панель: пользователи + JSON-снимок)
+/prisma/*.sqlite
+/prisma/*.sqlite-journal
+/prisma/*.db
+/prisma/*.db-journal
+
+# Локальные данные/дампы вне репозитория
+/data/
