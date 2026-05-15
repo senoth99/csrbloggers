@@ -17,14 +17,6 @@ const allowedDevOrigins = [
 const nextConfig = {
   reactStrictMode: true,
   output: "standalone",
-  experimental: {
-    outputFileTracingIncludes: {
-      "/api/**/*": [
-        "./node_modules/.prisma/client/**/*",
-        "./node_modules/@prisma/client/**/*",
-      ],
-    },
-  },
   allowedDevOrigins,
   async redirects() {
     return [
