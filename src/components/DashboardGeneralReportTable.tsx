@@ -11,17 +11,12 @@ import {
   integrationsCreatedInMonth,
   monthOverMonthTrend,
   monthOverMonthTrendCpm,
-  monthTitleRu,
   shiftYearMonth,
   type YearMonth,
 } from "@/lib/dashboard-metrics";
 import { computeCpmRub } from "@/lib/integration-metrics";
 import { formatRuCpm, formatRuMoney } from "@/lib/format-ru";
-import {
-  dashboardPanelClass,
-  dashboardReportPeriodClass,
-  dashboardSectionTitleClass,
-} from "@/screens/dashboard-shared";
+import { DashboardChartSection } from "@/screens/dashboard-shared";
 import { SortHeaderButton } from "@/components/SortableTh";
 import { useTableSort } from "@/hooks/useTableSort";
 import { compareNumbers, compareStringsRu } from "@/lib/table-sort";
@@ -255,12 +250,7 @@ export function DashboardGeneralReportTable({ ym, integrations }: Props) {
   }, [bodyRows, inMonthPrev]);
 
   return (
-    <section className={`p-6 sm:p-8 ${dashboardPanelClass}`}>
-      <header className="mb-8">
-        <p className={dashboardSectionTitleClass}>Общий отчёт</p>
-        <h2 className={dashboardReportPeriodClass}>{monthTitleRu(ym)}</h2>
-      </header>
-
+    <DashboardChartSection title="Общий отчёт">
       <div className="-mx-1 overflow-x-auto px-1">
         <div className="min-w-[34rem] sm:min-w-0">
           <div className={`${rowGridClass} border-b border-app-fg/10 pb-3`}>
@@ -377,6 +367,6 @@ export function DashboardGeneralReportTable({ ym, integrations }: Props) {
           </div>
         </div>
       </div>
-    </section>
+    </DashboardChartSection>
   );
 }

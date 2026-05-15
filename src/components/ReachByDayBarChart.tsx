@@ -1,6 +1,7 @@
 "use client";
 
-import { dashboardPanelClass, dashboardSectionTitleClass } from "@/screens/dashboard-shared";
+import { useMemo } from "react";
+import { DashboardChartSection } from "@/screens/dashboard-shared";
 
 const nf = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 
@@ -15,23 +16,31 @@ type Props = {
 export function ReachByDayBarChart({ dailyReach }: Props) {
   const maxVal = Math.max(1, ...dailyReach);
 
-  return (
-    <section
-      aria-label="Охваты по дням месяца"
-      className={`flex w-full max-w-none min-w-0 flex-col overflow-hidden p-6 sm:p-8 ${dashboardPanelClass}`}
-    >
-      <header className="mb-4 sm:mb-5">
-        <h2 className={dashboardSectionTitleClass}>Охваты по дням месяца</h2>
-      </header>
+  const ariaLabel = useMemo(() => {
+    if (dailyReach.length === 0) return "Охваты по дням месяца: нет данных";
+    const total = dailyReach.reduce((sum, r) => sum + r, 0);
+    const daysWithData = dailyReach.filter((r) => r > 0).length;
+    const peak = Math.max(...dailyReach);
+    const peakDay = dailyReach.indexOf(peak) + 1;
+    return [
+      `Охваты по дням месяца, ${dailyReach.length} дней.`,
+      `Сумма ${nf.format(total)}.`,
+      `Дней с данными: ${daysWithData}.`,
+      peak > 0 ? `Максимум ${nf.format(peak)} в день ${peakDay}.` : "Все дни без охватов.",
+    ].join(" ");
+  }, [dailyReach]);
 
+  return (
+    <DashboardChartSection title="Охваты по дням месяца">
       {dailyReach.length === 0 ? (
         <p className="py-12 text-center text-sm text-app-fg/45">Нет данных по дням.</p>
       ) : (
-        <div className="w-full min-w-0">
-          <div
-            className="flex w-full min-w-0 items-stretch gap-px sm:gap-0.5"
-            role="list"
-          >
+        <div
+          className="w-full min-w-0"
+          role="img"
+          aria-label={ariaLabel}
+        >
+          <div className="flex w-full min-w-0 items-stretch gap-px sm:gap-0.5">
             {dailyReach.map((reach, i) => {
               const day = i + 1;
               const has = reach > 0;
@@ -46,7 +55,6 @@ export function ReachByDayBarChart({ dailyReach }: Props) {
                 <div
                   key={day}
                   className="group flex min-w-0 flex-1 flex-col gap-1.5 sm:gap-2"
-                  role="listitem"
                   title={
                     has ? `${day}: ${nf.format(reach)} охватов` : `${day}: нет данных`
                   }
@@ -84,6 +92,6 @@ export function ReachByDayBarChart({ dailyReach }: Props) {
           </div>
         </div>
       )}
-    </section>
+    </DashboardChartSection>
   );
 }

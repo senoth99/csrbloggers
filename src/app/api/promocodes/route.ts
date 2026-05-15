@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { getSessionUser, isDatabaseConfigured } from "@/lib/auth-session-prisma";
+import { normalizeUsername, SUPERADMIN_LOGIN } from "@/lib/panel-auth-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -47,33 +49,28 @@ function pickFirstNumber(row: Record<string, unknown>, keys: string[]): number |
   return null;
 }
 
+const ACTIVATION_FIELD_KEYS = [
+  "activations",
+  "activationCount",
+  "activationsCount",
+  "activations_count",
+  "promoActivations",
+  "promo_activations",
+  "used",
+  "uses",
+  "useCount",
+  "usesCount",
+  "uses_count",
+  "usedCount",
+  "used_count",
+] as const;
+
 function extractActivations(row: Record<string, unknown>): number {
-  // Частые варианты в админских API
-  const direct = pickFirstNumber(row, [
-    "activations",
-    "activationCount",
-    "activationsCount",
-    "activations_count",
-    "promoActivations",
-    "promo_activations",
-    "used",
-    "uses",
-    "useCount",
-    "usesCount",
-    "uses_count",
-    "usedCount",
-    "used_count",
-    "orders",
-    "ordersCount",
-    "orders_count",
-    "total",
-    "totalCount",
-  ]);
+  const direct = pickFirstNumber(row, [...ACTIVATION_FIELD_KEYS]);
   if (direct != null) return direct;
 
-  // Фолбэк: ищем числовое поле с подходящим названием
   for (const [k, v] of Object.entries(row)) {
-    if (!/(activation|use|used|order)/i.test(k)) continue;
+    if (!/(activation|uses?|used)/i.test(k) || /order/i.test(k)) continue;
     const n = toNumber(v);
     if (n != null) return n;
   }
@@ -81,6 +78,14 @@ function extractActivations(row: Record<string, unknown>): number {
 }
 
 export async function GET(request: Request) {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ error: "Не задан DATABASE_URL." }, { status: 503 });
+  }
+  const sessionUser = await getSessionUser();
+  if (!sessionUser) {
+    return NextResponse.json({ error: "Требуется вход." }, { status: 401 });
+  }
+
   const token = process.env.CASHER_PROMOCODES_TOKEN?.trim();
   if (!token) {
     return NextResponse.json(
@@ -93,7 +98,11 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const debug = url.searchParams.get("debug") === "1";
+  const wantsDebug = url.searchParams.get("debug") === "1";
+  const debug =
+    wantsDebug &&
+    sessionUser.role === "superadmin" &&
+    normalizeUsername(sessionUser.login) === SUPERADMIN_LOGIN;
   const debugCode = url.searchParams.get("code")?.trim() || "";
 
   try {

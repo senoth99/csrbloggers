@@ -1,5 +1,11 @@
 import type { Delivery, Employee, Integration } from "@/types/panel-data";
-import { isoInYearMonth, shiftYearMonth, type YearMonth } from "@/lib/dashboard-metrics";
+import { isPublishedIntegrationStatus } from "@/types/panel-data";
+import {
+  dateIsoInYearMonth,
+  shiftYearMonth,
+  ymdInYearMonth,
+  type YearMonth,
+} from "@/lib/dashboard-metrics";
 
 export function normalizeTelegramUsername(raw: string): string {
   return raw.trim().replace(/^@+/, "").toLowerCase();
@@ -27,6 +33,17 @@ export function findEmployeeIdByPanelSession(
   );
   if (byPanel) return byPanel.id;
   return findEmployeeIdByTelegram(employees, panelLogin);
+}
+
+/** Сотрудник сессии: `User.employeeId` из админки, иначе panelLogin / Telegram */
+export function resolveSessionEmployeeId(
+  userEmployeeId: string | null | undefined,
+  employees: Employee[],
+  panelLogin: string | null | undefined,
+): string | undefined {
+  const assigned = userEmployeeId?.trim();
+  if (assigned && employees.some((e) => e.id === assigned)) return assigned;
+  return findEmployeeIdByPanelSession(employees, panelLogin);
 }
 
 /** «Иванов Иван Петрович» → «Иванов И. П.» */
@@ -117,14 +134,17 @@ function employeeMonthStats(
   for (const i of integrations) {
     const id = i.assignedEmployeeId;
     if (!id || !ids.has(id)) continue;
-    if (!isoInYearMonth(i.createdAt, ym)) continue;
+    if (!isPublishedIntegrationStatus(i.status)) continue;
+    if (!ymdInYearMonth(i.releaseDate, ym)) continue;
     const s = stats.get(id)!;
     s.int += 1;
   }
   for (const d of deliveries) {
     const id = d.assignedEmployeeId;
     if (!id || !ids.has(id)) continue;
-    if (!isoInYearMonth(d.createdAt, ym)) continue;
+    if (d.status !== "delivered") continue;
+    const deliveredIso = d.deliveredAt ?? d.updatedAt;
+    if (!dateIsoInYearMonth(deliveredIso, ym)) continue;
     const s = stats.get(id)!;
     s.del += 1;
   }

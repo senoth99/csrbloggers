@@ -1,10 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { ConfirmDeleteButton, StatusBadgeDropdown } from "@/components/ui";
 import { usePanelData } from "@/context/PanelDataContext";
+import { useUndo } from "@/context/UndoContext";
+import {
+  integrationReachTaskKey,
+  integrationReleaseVerifyTaskKey,
+} from "@/lib/panel-tasks";
 import { ContractorListModal } from "@/components/ContractorListModal";
 import { CrmPill } from "@/components/CrmPill";
 import {
@@ -85,8 +91,22 @@ function InfoBlock({
   );
 }
 
-export function IntegrationDetailScreen({ integrationId }: { integrationId: string }) {
+type IntegrationDetailScreenProps = {
+  integrationId?: string;
+  variant?: "page" | "drawer";
+  onClose?: () => void;
+};
+
+export function IntegrationDetailScreen({
+  integrationId: integrationIdProp,
+  variant = "page",
+  onClose,
+}: IntegrationDetailScreenProps) {
   const router = useRouter();
+  const params = useParams();
+  const integrationId =
+    integrationIdProp ?? (typeof params?.integrationId === "string" ? params.integrationId : "");
+  const isDrawer = variant === "drawer";
   const {
     contractors,
     integrations,
@@ -95,11 +115,14 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
     nicheOptions,
     employees,
     isAdmin,
+    completedTaskKeys,
     updateIntegration,
     removeIntegration,
+    restoreIntegration,
     addIntegrationPosition,
     removeIntegrationPosition,
   } = usePanelData();
+  const { showUndo } = useUndo();
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
@@ -198,10 +221,67 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
     return () => document.removeEventListener("keydown", onKey);
   }, [isEditOpen, closeEdit]);
 
+  const persistDrawerField = useCallback(
+    (updates: Parameters<typeof updateIntegration>[1]) => {
+      if (!row) return;
+      updateIntegration(row.id, updates);
+    },
+    [row, updateIntegration],
+  );
+
+  const saveDrawerBlur = useCallback(() => {
+    if (!row || !isDrawer || !isAdmin) return;
+    const t = titleDraft.trim();
+    if (!t) return;
+    if (
+      integrations.some(
+        (i) =>
+          i.id !== row.id && integrationTitleKey(i.title ?? "") === integrationTitleKey(t),
+      )
+    ) {
+      return;
+    }
+    const budgetVal = parseBudgetReachField(budgetDraft);
+    const reachVal = parseBudgetReachField(reachDraft);
+    persistDrawerField({
+      title: t,
+      contractorId: contractorDraft,
+      assignedEmployeeId: assignedDraft.trim() || undefined,
+      socialNetworkId: socialDraft,
+      releaseDate: releaseDateDraft.trim() || undefined,
+      releaseTime: releaseTimeDraft.trim() || undefined,
+      budget: budgetVal,
+      reach: reachVal,
+      publicLink: linkDraft.trim() === "" ? "" : linkDraft,
+      comment: commentDraft.trim() === "" ? "" : commentDraft.trim(),
+      cooperationType:
+        cooperationDraft === "barter" || cooperationDraft === "commercial"
+          ? cooperationDraft
+          : undefined,
+    });
+  }, [
+    row,
+    isDrawer,
+    isAdmin,
+    titleDraft,
+    integrations,
+    contractorDraft,
+    assignedDraft,
+    socialDraft,
+    releaseDateDraft,
+    releaseTimeDraft,
+    budgetDraft,
+    reachDraft,
+    linkDraft,
+    commentDraft,
+    cooperationDraft,
+    persistDrawerField,
+  ]);
+
   if (!row) {
     return (
-      <div className="space-y-4">
-        <BackLink href="/integrations" />
+      <div className={isDrawer ? "space-y-3 p-4" : "space-y-4"}>
+        {!isDrawer ? <BackLink href="/integrations" /> : null}
         <p className="text-sm text-app-fg/55">Интеграция не найдена.</p>
       </div>
     );
@@ -216,9 +296,16 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
 
   function handleDelete() {
     if (!isAdmin || !row) return;
-    if (!window.confirm("Удалить эту интеграцию?")) return;
+    const snapshot = { ...row };
+    const rk = integrationReachTaskKey(row.id);
+    const vk = integrationReleaseVerifyTaskKey(row.id);
+    const taskKeysSnapshot = completedTaskKeys.filter((k) => k === rk || k === vk);
     removeIntegration(row.id);
-    router.replace("/integrations");
+    showUndo("Интеграция удалена.", () => {
+      restoreIntegration(snapshot, taskKeysSnapshot);
+    });
+    if (isDrawer && onClose) onClose();
+    else router.replace("/integrations");
   }
 
   function handleSave() {
@@ -312,16 +399,65 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
     setIsAddPositionOpen(false);
   }
 
-  const budgetLive = draftOrSaved(isEditOpen, budgetDraft, row.budget);
-  const reachLive = draftOrSaved(isEditOpen, reachDraft, row.reach);
+  const budgetLive = draftOrSaved(isEditOpen || isDrawer, budgetDraft, row.budget);
+  const reachLive = draftOrSaved(isEditOpen || isDrawer, reachDraft, row.reach);
   const cpmRub = computeCpmRub(budgetLive, reachLive);
   const publicHref = integrationPublicLinkHref(row.publicLink);
 
-  return (
-    <div className="mx-auto w-full max-w-3xl space-y-8 pb-10">
-      <BackLink href="/integrations" />
+  const shellClass = isDrawer
+    ? "w-full space-y-4 p-4 pb-6"
+    : "mx-auto w-full max-w-3xl space-y-8 pb-10";
 
-      <header className="flex flex-col gap-4 border-b border-app-fg/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
+  return (
+    <div className={shellClass}>
+      {isDrawer ? (
+        <header className="flex items-start justify-between gap-3 border-b border-app-fg/10 pb-3">
+          <div className="min-w-0 flex-1 space-y-2">
+            {isAdmin ? (
+              <input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={saveDrawerBlur}
+                className="w-full border border-app-fg/15 bg-app-bg px-2 py-1.5 text-base font-semibold text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+              />
+            ) : (
+              <h1 className="text-base font-semibold text-app-fg">{row.title}</h1>
+            )}
+            {isAdmin ? (
+              <StatusBadgeDropdown
+                value={row.status}
+                options={INTEGRATION_STATUSES.map((s) => ({
+                  value: s,
+                  label: INTEGRATION_STATUS_LABELS[s],
+                }))}
+                badgeClass={STATUS_BADGE_CLASS[row.status]}
+                onChange={(s) => {
+                  const next = s as IntegrationStatus;
+                  setStatusDraft(next);
+                  persistDrawerField({ status: next });
+                }}
+              />
+            ) : (
+              <CrmPill className={STATUS_BADGE_CLASS[row.status]}>
+                {INTEGRATION_STATUS_LABELS[row.status]}
+              </CrmPill>
+            )}
+          </div>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 border border-app-fg/15 p-1.5 text-app-fg/70 transition hover:border-app-fg/40"
+              aria-label="Закрыть"
+            >
+              <X className="h-4 w-4" strokeWidth={1.5} />
+            </button>
+          ) : null}
+        </header>
+      ) : (
+        <>
+          <BackLink href="/integrations" />
+          <header className="flex flex-col gap-4 border-b border-app-fg/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-app-fg/50">
             Интеграция
@@ -349,7 +485,70 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
           </button>
         ) : null}
       </header>
+        </>
+      )}
 
+      {isDrawer && isAdmin ? (
+        <section className="space-y-3">
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+              Площадка
+              <select
+                value={socialDraft}
+                onChange={(e) => setSocialDraft(e.target.value)}
+                onBlur={saveDrawerBlur}
+                className={`${selectClass} mt-1`}
+              >
+                {socialOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+              Дата выхода
+              <input
+                type="date"
+                value={releaseDateDraft}
+                onChange={(e) => setReleaseDateDraft(e.target.value)}
+                onBlur={saveDrawerBlur}
+                className={`${selectClass} mt-1`}
+              />
+            </label>
+            <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+              Бюджет, ₽
+              <input
+                type="text"
+                value={budgetDraft}
+                onChange={(e) => setBudgetDraft(e.target.value)}
+                onBlur={saveDrawerBlur}
+                className={`${selectClass} mt-1 tabular-nums`}
+              />
+            </label>
+            <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+              Охваты
+              <input
+                type="text"
+                value={reachDraft}
+                onChange={(e) => setReachDraft(e.target.value)}
+                onBlur={saveDrawerBlur}
+                className={`${selectClass} mt-1 tabular-nums`}
+              />
+            </label>
+          </div>
+          <button
+            type="button"
+            onClick={handleDelete}
+            className="inline-flex items-center gap-2 border border-app-fg/15 px-3 py-2 text-xs text-app-fg/70 transition hover:border-red-500/40 hover:text-red-400"
+          >
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            Удалить
+          </button>
+        </section>
+      ) : null}
+
+      {!isDrawer ? (
       <section className="space-y-4">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-fg/45">
           Данные интеграции
@@ -456,6 +655,7 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
           </InfoBlock>
         </div>
       </section>
+      ) : null}
 
       <section className="space-y-4">
         <div className="flex items-center justify-between gap-3">
@@ -512,17 +712,14 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
                           </td>
                           {isAdmin && (
                             <td className="px-3 py-2">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (!window.confirm(`Удалить позицию «${pos.title}»?`)) return;
-                                  removeIntegrationPosition(row.id, pos.id);
-                                }}
+                              <ConfirmDeleteButton
+                                onConfirm={() => removeIntegrationPosition(row.id, pos.id)}
+                                confirmLabel="?"
                                 className="text-app-fg/30 transition hover:text-red-400"
-                                aria-label="Удалить позицию"
+                                confirmClassName="font-medium text-red-400"
                               >
-                                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
-                              </button>
+                                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden />
+                              </ConfirmDeleteButton>
                             </td>
                           )}
                         </tr>
@@ -665,7 +862,7 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
         )}
       </section>
 
-      {isAdmin && isEditOpen ? (
+      {isAdmin && isEditOpen && !isDrawer ? (
         <div className={overlayClass} role="presentation" onClick={closeEdit}>
           <div
             role="dialog"

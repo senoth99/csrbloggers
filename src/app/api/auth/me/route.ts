@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, isDatabaseConfigured } from "@/lib/auth-session-prisma";
+import { normalizeUsername, SUPERADMIN_LOGIN } from "@/lib/panel-auth-utils";
 import { prisma } from "@/lib/prisma";
 import type { PanelUserPublic } from "@/types/panel-auth-api";
 
@@ -32,12 +33,24 @@ export async function GET() {
     return NextResponse.json({ authenticated: false as const }, { status: 200 });
   }
 
+  const me = toPublic(sessionUser);
+  const isSuperadmin =
+    sessionUser.role === "superadmin" &&
+    normalizeUsername(sessionUser.login) === SUPERADMIN_LOGIN;
+
+  if (!isSuperadmin) {
+    return NextResponse.json({
+      authenticated: true as const,
+      me,
+    });
+  }
+
   const all = await prisma.user.findMany({ orderBy: { login: "asc" } });
   const users: PanelUserPublic[] = all.map((row) => toPublic(row));
 
   return NextResponse.json({
     authenticated: true as const,
-    me: toPublic(sessionUser),
+    me,
     users,
   });
 }

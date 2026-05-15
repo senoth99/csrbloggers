@@ -1,16 +1,16 @@
 import { Suspense } from "react";
-import { DashboardDeliveriesScreen } from "@/screens/DashboardDeliveriesScreen";
+import { DashboardRedirect } from "@/components/dashboard/DashboardRedirect";
 
 function Fallback() {
   return (
-    <div className="py-12 text-center text-sm text-app-fg/55">Загрузка дашборда…</div>
+    <div className="py-12 text-center text-sm text-app-fg/55">Переход на дашборд…</div>
   );
 }
 
-export default function DashboardDeliveriesPage() {
+export default function DashboardDeliveriesRedirectPage() {
   return (
     <Suspense fallback={<Fallback />}>
-      <DashboardDeliveriesScreen />
+      <DashboardRedirect section="deliveries" />
     </Suspense>
   );
 }

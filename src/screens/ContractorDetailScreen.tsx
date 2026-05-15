@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, Pencil, Plus, Save, Search, Trash2, X } from "lucide-react";
 import { usePanelData } from "@/context/PanelDataContext";
+import { useUndo } from "@/context/UndoContext";
 import { formatRuMoney } from "@/lib/format-ru";
 import { nicheChoiceCaption } from "@/lib/niche-display";
 import {
@@ -17,14 +18,13 @@ import {
 } from "@/lib/contractor-rating";
 import {
   countBy,
-  currentYearMonth,
   deliveriesCreatedInMonth,
-  formatYearMonthString,
   integrationsCreatedInMonth,
+  ymdInYearMonth,
   monthOverMonthTrend,
   shiftYearMonth,
-  type YearMonth,
 } from "@/lib/dashboard-metrics";
+import { useDashboardMonth } from "@/hooks/useDashboardMonth";
 import { ContractorRatingBadge } from "@/components/ContractorRatingBadge";
 import { CrmPill } from "@/components/CrmPill";
 import { usePromocodesCtx } from "@/context/PromocodesContext";
@@ -40,6 +40,7 @@ import {
   type ContractorLink,
   type IntegrationStatus,
 } from "@/types/panel-data";
+import { ConfirmDeleteButton } from "@/components/ui";
 import {
   DashboardChartSection,
   DistributionBars,
@@ -115,8 +116,19 @@ function isNotDeletedProduct(product: ApiProduct): boolean {
   return product.isDeleted !== true;
 }
 
-export function ContractorDetailScreen({ contractorId }: { contractorId: string }) {
+type DrawerTab = "profile" | "integrations" | "deliveries" | "items";
+
+export function ContractorDetailScreen({
+  contractorId,
+  variant = "page",
+  onClose,
+}: {
+  contractorId: string;
+  variant?: "page" | "drawer";
+  onClose?: () => void;
+}) {
   const router = useRouter();
+  const isDrawer = variant === "drawer";
   const {
     contractors,
     integrations,
@@ -125,6 +137,7 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
     isAdmin,
     updateContractor,
     removeContractor,
+    restoreContractorDeletion,
     contractorItems,
     deliveries,
     addContractorItem,
@@ -134,6 +147,7 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
     updateContractorLink,
     removeContractorLink,
   } = usePanelData();
+  const { showUndo } = useUndo();
   const { byCodeKey: promoByCodeKey, loading: promoLoading, error: promoError } =
     usePromocodesCtx();
   const [products, setProducts] = useState<ApiProduct[]>([]);
@@ -154,10 +168,12 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
   const [draftNicheId, setDraftNicheId] = useState("");
   const [draftSizeCategory, setDraftSizeCategory] = useState<string>("");
   const [activeTab, setActiveTab] = useState<ContractorTab>("availability");
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>("profile");
   const [availSearch, setAvailSearch] = useState("");
   const [delSearch, setDelSearch] = useState("");
   const [intSearch, setIntSearch] = useState("");
-  const [overviewYm, setOverviewYm] = useState<YearMonth>(() => currentYearMonth());
+  const { ym: overviewYm, setMonth: setOverviewYm, monthInputValue: overviewMonthInput } =
+    useDashboardMonth();
   const [linksSearch, setLinksSearch] = useState("");
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
@@ -304,7 +320,6 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
       : undefined;
 
   const overviewYmPrev = useMemo(() => shiftYearMonth(overviewYm, -1), [overviewYm]);
-  const overviewMonthInput = formatYearMonthString(overviewYm);
 
   const contractorIntegrationsCreatedInMonth = useMemo(
     () => integrationsCreatedInMonth(related, overviewYm),
@@ -315,23 +330,15 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
     [related, overviewYmPrev],
   );
 
-  const contractorReleasePipelineInMonth = useMemo(() => {
-    return related.filter((i) => {
-      const rel = i.releaseDate?.trim();
-      if (!rel) return false;
-      const [y, m] = rel.split("-").map(Number);
-      return y === overviewYm.year && m === overviewYm.month;
-    });
-  }, [related, overviewYm]);
+  const contractorReleasePipelineInMonth = useMemo(
+    () => related.filter((i) => ymdInYearMonth(i.releaseDate, overviewYm)),
+    [related, overviewYm],
+  );
 
-  const contractorReleasePipelineInMonthPrev = useMemo(() => {
-    return related.filter((i) => {
-      const rel = i.releaseDate?.trim();
-      if (!rel) return false;
-      const [y, m] = rel.split("-").map(Number);
-      return y === overviewYmPrev.year && m === overviewYmPrev.month;
-    });
-  }, [related, overviewYmPrev]);
+  const contractorReleasePipelineInMonthPrev = useMemo(
+    () => related.filter((i) => ymdInYearMonth(i.releaseDate, overviewYmPrev)),
+    [related, overviewYmPrev],
+  );
 
   const overviewStatusBars = useMemo(() => {
     const raw = countBy(contractorIntegrationsCreatedInMonth.map((i) => i.status));
@@ -464,6 +471,8 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
         setIsLinkModalOpen(false);
         setEditingLinkId(null);
         setLinkModalError(null);
+        setDraftLinkTitle("");
+        setDraftLinkUrl("");
       }
     };
     document.addEventListener("keydown", onKey);
@@ -472,18 +481,44 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
 
   if (!contractor) {
     return (
-      <div className="space-y-4">
-        <BackLink href="/contractors" />
+      <div className={`space-y-4 ${isDrawer ? "px-4 py-4 sm:px-5" : ""}`}>
+        {!isDrawer ? <BackLink href="/contractors" /> : null}
+        {isDrawer && onClose ? (
+          <button
+            type="button"
+            onClick={onClose}
+            className="ml-auto flex border border-app-fg/15 p-1.5 text-app-fg/70"
+            aria-label="Закрыть"
+          >
+            <X className="h-4 w-4" strokeWidth={1.5} />
+          </button>
+        ) : null}
         <p className="text-sm text-app-fg/55">Контрагент не найден.</p>
       </div>
     );
   }
 
+  function saveProfileBlur(updates: Partial<Contractor>) {
+    if (!isAdmin || !contractor) return;
+    updateContractor(contractor.id, updates);
+  }
+
   function handleDelete() {
     if (!isAdmin || !contractor) return;
-    if (!window.confirm("Удалить контрагента и связанные строки интеграций?")) return;
-    removeContractor(contractor.id);
-    router.replace("/contractors");
+    const contractorId = contractor.id;
+    const snapshot = {
+      contractor: { ...contractor },
+      integrations: integrations.filter((i) => i.contractorId === contractorId),
+      contractorItems: contractorItems.filter((i) => i.contractorId === contractorId),
+      contractorLinks: contractorLinks.filter((i) => i.contractorId === contractorId),
+      deliveries: deliveries.filter((d) => d.contractorId === contractorId),
+    };
+    removeContractor(contractorId);
+    showUndo("Контрагент удалён.", () => {
+      restoreContractorDeletion(snapshot);
+    });
+    if (onClose) onClose();
+    else router.replace("/contractors");
   }
 
   function openEdit() {
@@ -535,6 +570,8 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
     setIsLinkModalOpen(false);
     setEditingLinkId(null);
     setLinkModalError(null);
+    setDraftLinkTitle("");
+    setDraftLinkUrl("");
   }
 
   function openAddLink() {
@@ -586,9 +623,42 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
   const fioDisplay = isEditOpen ? draftContactPerson : (contractor.contactPerson ?? "");
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-10 pb-10">
-      <BackLink href="/contractors" />
+    <div
+      className={
+        isDrawer
+          ? "w-full space-y-6 pb-6"
+          : "mx-auto w-full max-w-5xl space-y-10 pb-10"
+      }
+    >
+      {isDrawer ? (
+        <div className="flex items-start justify-between gap-3 border-b border-app-fg/10 px-4 py-3 sm:px-5">
+          <div className="min-w-0 flex-1">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-app-fg/50">
+              Контрагент
+            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-2">
+              <h1 className="truncate text-lg font-semibold text-app-fg">
+                {contractor.contactPerson?.trim() || contractor.name}
+              </h1>
+              <ContractorRatingBadge value={rating10} />
+            </div>
+          </div>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 border border-app-fg/15 p-1.5 text-app-fg/70 transition hover:border-app-fg/40"
+              aria-label="Закрыть"
+            >
+              <X className="h-4 w-4" strokeWidth={1.5} />
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <BackLink href="/contractors" />
+      )}
 
+      {!isDrawer ? (
       <header className="flex flex-col gap-4 border-b border-app-fg/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-2">
           <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-app-fg/50">
@@ -612,7 +682,9 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
           </button>
         ) : null}
       </header>
+      ) : null}
 
+      {!isDrawer ? (
       <section className="space-y-10">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -663,6 +735,10 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
         </div>
 
         <DashboardChartSection title="Сводка">
+          <p className="mb-4 text-xs text-app-fg/50">
+            «Создано в месяце» и диаграммы статусов/площадок — по дате создания записи.
+            «План выхода в месяце» — по releaseDate.
+          </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             <StatCard
               label="Создано в месяце"
@@ -674,7 +750,7 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
               )}
             />
             <StatCard
-              label="Планируемый выход в месяце"
+              label="План выхода в месяце"
               value={contractorReleasePipelineInMonth.length}
               trend={monthOverMonthTrend(
                 contractorReleasePipelineInMonth.length,
@@ -686,10 +762,10 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
         </DashboardChartSection>
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-          <DashboardChartSection title="Статусы">
+          <DashboardChartSection title="Создано в месяце · статусы">
             <DistributionBars entries={overviewStatusBars} />
           </DashboardChartSection>
-          <DashboardChartSection title="Площадки">
+          <DashboardChartSection title="Создано в месяце · площадки">
             <DistributionBars entries={overviewPlatformBars} />
           </DashboardChartSection>
         </div>
@@ -741,14 +817,16 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
           </div>
         </DashboardChartSection>
       </section>
+      ) : null}
 
+      {!isDrawer ? (
       <section className="space-y-4">
         <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-fg/45">
           Данные контрагента
         </h2>
         <div className="grid gap-3 sm:grid-cols-2">
           <InfoBlock label="Никнейм">{nicknameDisplay.trim() || "—"}</InfoBlock>
-          <InfoBlock label="ФИО">{fioDisplay.trim() || "—"}</InfoBlock>
+          <InfoBlock label="Контактное лицо">{fioDisplay.trim() || "—"}</InfoBlock>
           <InfoBlock label="Город">
             {contractor.city?.trim() ? (
               <span className="text-app-fg">{contractor.city.trim()}</span>
@@ -808,8 +886,9 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
           ) : null}
         </div>
       </section>
+      ) : null}
 
-      {isAdmin && isEditOpen ? (
+      {isAdmin && !isDrawer && isEditOpen ? (
         <div className={overlayClass} role="presentation" onClick={closeEdit}>
           <div
             role="dialog"
@@ -850,12 +929,12 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
                   />
                 </label>
                 <label className="block text-xs uppercase tracking-wider text-app-fg/55">
-                  ФИО
+                  Контактное лицо
                   <input
                     value={draftContactPerson}
                     onChange={(e) => setDraftContactPerson(e.target.value)}
                     className={`${selectClass} mt-1`}
-                    placeholder="ФИО"
+                    placeholder="Имя и фамилия"
                     autoComplete="name"
                   />
                 </label>
@@ -924,14 +1003,17 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
             </div>
 
             <div className="flex shrink-0 flex-col gap-2 border-t border-app-fg/15 bg-app-fg/[0.02] px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-              <button
-                type="button"
-                onClick={handleDelete}
+              <ConfirmDeleteButton
+                onConfirm={handleDelete}
+                confirmLabel="Подтвердить удаление"
                 className="inline-flex items-center justify-center gap-2 border border-app-fg/15 px-4 py-2.5 text-xs font-medium text-app-fg/75 transition hover:border-red-500/40 hover:bg-red-500/5 sm:order-2"
+                confirmClassName="inline-flex items-center justify-center gap-2 border border-red-500/50 bg-red-500/10 px-4 py-2.5 text-xs font-medium text-red-300 sm:order-2"
               >
-                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                Удалить
-              </button>
+                <span className="inline-flex items-center gap-2">
+                  <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                  Удалить
+                </span>
+              </ConfirmDeleteButton>
               <div className="flex flex-col gap-2 sm:flex-row sm:gap-3">
                 <button
                   type="button"
@@ -954,35 +1036,186 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
         </div>
       ) : null}
 
-      <section className="space-y-3 border-t border-app-fg/10 pt-4">
-        <div className="flex flex-wrap gap-2 border border-app-fg/15 bg-app-bg p-1">
-          <TabButton
-            active={activeTab === "availability"}
-            label="НАЛИЧИЕ"
-            count={ownedItems.length}
-            onClick={() => setActiveTab("availability")}
-          />
-          <TabButton
-            active={activeTab === "deliveries"}
-            label="ДОСТАВКИ"
-            count={contractorDeliveries.length}
-            onClick={() => setActiveTab("deliveries")}
-          />
-          <TabButton
-            active={activeTab === "integrations"}
-            label="ИНТЕГРАЦИИ"
-            count={related.length}
-            onClick={() => setActiveTab("integrations")}
-          />
-          <TabButton
-            active={activeTab === "links"}
-            label="ССЫЛКИ"
-            count={ownedLinks.length}
-            onClick={() => setActiveTab("links")}
-          />
+      <section
+        className={`space-y-3 border-t border-app-fg/10 pt-4 ${isDrawer ? "px-0" : ""}`}
+      >
+        <div
+          className={`flex flex-wrap gap-2 border border-app-fg/15 bg-app-bg p-1 ${isDrawer ? "mx-4 sm:mx-5" : ""}`}
+        >
+          {isDrawer ? (
+            <>
+              <TabButton
+                active={drawerTab === "profile"}
+                label="ПРОФИЛЬ"
+                onClick={() => setDrawerTab("profile")}
+              />
+              <TabButton
+                active={drawerTab === "integrations"}
+                label="ИНТЕГРАЦИИ"
+                count={related.length}
+                onClick={() => setDrawerTab("integrations")}
+              />
+              <TabButton
+                active={drawerTab === "deliveries"}
+                label="ДОСТАВКИ"
+                count={contractorDeliveries.length}
+                onClick={() => setDrawerTab("deliveries")}
+              />
+              <TabButton
+                active={drawerTab === "items"}
+                label="ТОВАРЫ"
+                count={ownedItems.length}
+                onClick={() => setDrawerTab("items")}
+              />
+            </>
+          ) : (
+            <>
+              <TabButton
+                active={activeTab === "availability"}
+                label="НАЛИЧИЕ"
+                count={ownedItems.length}
+                onClick={() => setActiveTab("availability")}
+              />
+              <TabButton
+                active={activeTab === "deliveries"}
+                label="ДОСТАВКИ"
+                count={contractorDeliveries.length}
+                onClick={() => setActiveTab("deliveries")}
+              />
+              <TabButton
+                active={activeTab === "integrations"}
+                label="ИНТЕГРАЦИИ"
+                count={related.length}
+                onClick={() => setActiveTab("integrations")}
+              />
+              <TabButton
+                active={activeTab === "links"}
+                label="ССЫЛКИ"
+                count={ownedLinks.length}
+                onClick={() => setActiveTab("links")}
+              />
+            </>
+          )}
         </div>
 
-        {activeTab === "availability" && (
+        {isDrawer && drawerTab === "profile" ? (
+          <div className="space-y-3 px-4 sm:px-5">
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-app-fg/55">
+              Профиль
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                Никнейм
+                <input
+                  key={`name-${contractor.id}-${contractor.name}`}
+                  defaultValue={contractor.name ?? ""}
+                  disabled={!isAdmin}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v && v !== contractor.name) saveProfileBlur({ name: v });
+                  }}
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                Контактное лицо
+                <input
+                  key={`cp-${contractor.id}-${contractor.contactPerson}`}
+                  defaultValue={contractor.contactPerson ?? ""}
+                  disabled={!isAdmin}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v !== (contractor.contactPerson ?? ""))
+                      saveProfileBlur({ contactPerson: v });
+                  }}
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                Город
+                <input
+                  key={`city-${contractor.id}-${contractor.city}`}
+                  defaultValue={contractor.city ?? ""}
+                  disabled={!isAdmin}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v !== (contractor.city ?? "")) saveProfileBlur({ city: v });
+                  }}
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                Промокод
+                <input
+                  key={`promo-${contractor.id}-${contractor.promoCode}`}
+                  defaultValue={contractor.promoCode ?? ""}
+                  disabled={!isAdmin}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v !== (contractor.promoCode ?? "")) saveProfileBlur({ promoCode: v });
+                  }}
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs uppercase tracking-wider text-app-fg/55 sm:col-span-2">
+                Вирусность
+                <input
+                  key={`vir-${contractor.id}-${contractor.virality}`}
+                  defaultValue={contractor.virality ?? ""}
+                  disabled={!isAdmin}
+                  onBlur={(e) => {
+                    const v = e.target.value.trim();
+                    if (v !== (contractor.virality ?? "")) saveProfileBlur({ virality: v });
+                  }}
+                  className={`${fieldClass} mt-1`}
+                />
+              </label>
+              <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                Ниша
+                <select
+                  key={`niche-${contractor.id}-${contractor.nicheId}`}
+                  defaultValue={contractor.nicheId ?? ""}
+                  disabled={!isAdmin}
+                  onChange={(e) => saveProfileBlur({ nicheId: e.target.value.trim() })}
+                  className={`${selectClass} mt-1 ${selectNativeChevronPad}`}
+                >
+                  <option value="">Не выбрана</option>
+                  {nicheOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {nicheChoiceCaption(o.label)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                Категория
+                <select
+                  key={`size-${contractor.id}-${contractor.sizeCategory}`}
+                  defaultValue={contractor.sizeCategory ?? ""}
+                  disabled={!isAdmin}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const hasSize =
+                      v === "micro" || v === "middle" || v === "large";
+                    saveProfileBlur({
+                      sizeCategory: hasSize ? v : undefined,
+                    });
+                  }}
+                  className={`${selectClass} mt-1 ${selectNativeChevronPad}`}
+                >
+                  <option value="">Не указана</option>
+                  {CONTRACTOR_SIZE_CATEGORIES.map((k) => (
+                    <option key={k} value={k}>
+                      {CONTRACTOR_SIZE_CATEGORY_LABELS[k]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
+        ) : null}
+
+        {(isDrawer ? drawerTab === "items" : activeTab === "availability") && (
           <>
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-app-fg/55">
@@ -1054,17 +1287,11 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
                         Размер: {item.size}
                       </p>
                       {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (window.confirm(`Удалить «${item.productName}» (${item.size})?`)) {
-                              removeContractorItem(item.id);
-                            }
-                          }}
-                          className="pt-1 text-[11px] text-app-fg/55 transition"
-                        >
-                          Удалить
-                        </button>
+                        <ConfirmDeleteButton
+                          onConfirm={() => removeContractorItem(item.id)}
+                          confirmLabel="Подтвердить?"
+                          className="pt-1 text-[11px] text-app-fg/55 transition hover:text-red-400"
+                        />
                       )}
                     </div>
                   </article>
@@ -1076,7 +1303,7 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
           </>
         )}
 
-        {activeTab === "deliveries" && (
+        {(isDrawer ? drawerTab === "deliveries" : activeTab === "deliveries") && (
           <>
             {contractorDeliveries.length === 0 ? (
               <div className="border border-dashed border-app-fg/15 px-4 py-6 text-sm text-app-fg/55">
@@ -1132,7 +1359,7 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
           </>
         )}
 
-        {activeTab === "integrations" && (
+        {(isDrawer ? drawerTab === "integrations" : activeTab === "integrations") && (
           <>
             {related.length > 0 ? (
               <>
@@ -1185,14 +1412,15 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
                 )}
               </>
             ) : (
-              <div className="border border-dashed border-app-fg/15 px-4 py-6 text-sm text-app-fg/55">
+              <p className="border border-dashed border-app-fg/15 px-4 py-12 text-center text-sm text-app-fg/55">
                 Интеграций пока нет.
-              </div>
+                {isAdmin ? " Создайте первую в разделе «Интеграции»." : ""}
+              </p>
             )}
           </>
         )}
 
-        {activeTab === "links" && (
+        {!isDrawer && activeTab === "links" && (
           <>
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-xs font-semibold uppercase tracking-wider text-app-fg/55">
@@ -1267,18 +1495,17 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
                                   <Pencil className="h-3 w-3" strokeWidth={1.75} />
                                   Изменить
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (window.confirm(`Удалить ссылку «${item.title}»?`)) {
-                                      removeContractorLink(item.id);
-                                    }
-                                  }}
+                                <ConfirmDeleteButton
+                                  onConfirm={() => removeContractorLink(item.id)}
+                                  confirmLabel="Подтвердить?"
                                   className="inline-flex items-center gap-1.5 border border-app-fg/15 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/35"
+                                  confirmClassName="inline-flex items-center gap-1.5 border border-red-500/50 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-red-300"
                                 >
-                                  <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                                  Удалить
-                                </button>
+                                  <span className="inline-flex items-center gap-1.5">
+                                    <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                                    Удалить
+                                  </span>
+                                </ConfirmDeleteButton>
                               </div>
                             ) : null}
                           </div>
@@ -1550,7 +1777,7 @@ function TabButton({
       }
     >
       {label}
-      {count != null && count > 0 ? (
+      {count != null ? (
         <span className={active ? "tabular-nums opacity-70" : "tabular-nums opacity-50"}>
           {count}
         </span>

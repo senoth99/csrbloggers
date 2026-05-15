@@ -23,10 +23,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (!hydrated) {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center text-app-fg/55"
-        style={{ backgroundColor: "#000000", color: "rgba(255,255,255,0.55)" }}
-      >
+      <div className="flex min-h-screen items-center justify-center bg-app-bg text-app-fg/55">
         Загрузка…
       </div>
     );
@@ -34,10 +31,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   if (!pathname.startsWith("/login") && !isAuthenticated) {
     return (
-      <div
-        className="flex min-h-screen items-center justify-center text-app-fg/55"
-        style={{ backgroundColor: "#000000", color: "rgba(255,255,255,0.55)" }}
-      >
+      <div className="flex min-h-screen items-center justify-center bg-app-bg text-app-fg/55">
         Загрузка…
       </div>
     );

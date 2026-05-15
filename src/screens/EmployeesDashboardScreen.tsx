@@ -14,6 +14,7 @@ import {
 } from "@/lib/employee-utils";
 import { shiftYearMonth } from "@/lib/dashboard-metrics";
 import { useDashboardMonth } from "@/hooks/useDashboardMonth";
+import { ConfirmDeleteButton } from "@/components/ui";
 import {
   dashboardMonthInputClass,
   dashboardMonthNavButtonClass,
@@ -127,23 +128,15 @@ export function EmployeesDashboardScreen() {
   function handleDeleteEmployee(row: LeaderboardRowMonthly) {
     if (!canCreateAccounts) return;
     const emp = row.employee;
-    const label = abbreviateFio(emp.fullName);
     const loginKey = (emp.panelLogin ?? emp.telegramUsername).trim();
-    if (
-      !window.confirm(
-        `Удалить сотрудника «${label}»?${loginKey ? ` Учётная запись «${loginKey}» будет отключена.` : ""}`,
-      )
-    ) {
-      return;
-    }
     removeEmployee(emp.id);
     if (loginKey) void removeUserAccess(loginKey);
   }
   return (
     <div className="space-y-8 pb-10">
-      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-app-fg/45">
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-app-fg/40">
             Дашборд
           </p>
           <h1 className={dashboardPageTitleClass}>Сотрудники</h1>
@@ -305,15 +298,15 @@ export function EmployeesDashboardScreen() {
                   </div>
                   </div>
                   {canCreateAccounts ? (
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteEmployee(row)}
+                    <ConfirmDeleteButton
+                      onConfirm={() => handleDeleteEmployee(row)}
+                      confirmLabel="Подтвердить удаление"
                       className="inline-flex shrink-0 items-center justify-center gap-1 border border-app-fg/15 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-app-fg/55 transition hover:border-red-500/50 hover:text-red-400 sm:px-3 sm:text-xs"
-                      aria-label={`Удалить сотрудника ${abbreviateFio(row.employee.fullName)}`}
+                      confirmClassName="inline-flex shrink-0 items-center justify-center gap-1 border border-red-500/50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-red-400 sm:px-3 sm:text-xs"
                     >
-                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                      <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden />
                       Удалить
-                    </button>
+                    </ConfirmDeleteButton>
                   ) : null}
                 </div>
               </li>

@@ -5,6 +5,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { CasherLogoSpin } from "@/components/CasherLogoSpin";
 
+const SAFE_INTERNAL_PATH = /^\/[a-zA-Z0-9_./?=&%-]*$/;
+
+function safeRedirectPath(raw: string | null | undefined): string {
+  const fallback = "/dashboard";
+  if (!raw) return fallback;
+  if (raw.startsWith("//")) return fallback;
+  if (!SAFE_INTERNAL_PATH.test(raw)) return fallback;
+  return raw;
+}
+
 function LoginForm() {
   const { login, hydrated, isAuthenticated, authBackendError } = useAuth();
   const router = useRouter();
@@ -19,7 +29,7 @@ function LoginForm() {
   useEffect(() => {
     if (!hydrated) return;
     if (isAuthenticated) {
-      router.replace(nextPath.startsWith("/") ? nextPath : "/dashboard");
+      router.replace(safeRedirectPath(nextPath));
     }
   }, [hydrated, isAuthenticated, nextPath, router]);
 
@@ -31,7 +41,7 @@ function LoginForm() {
     setLoginError(null);
     try {
       const ok = await login(l, password);
-      if (ok) router.replace(nextPath.startsWith("/") ? nextPath : "/dashboard");
+      if (ok) router.replace(safeRedirectPath(nextPath));
       else setLoginError("Неверный логин или пароль.");
     } finally {
       setBusy(false);

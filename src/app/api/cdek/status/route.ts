@@ -1,7 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSessionUser, isDatabaseConfigured } from "@/lib/auth-session-prisma";
 import type { DeliveryStatus } from "@/types/panel-data";
 
 const CDEK_API = "https://api.cdek.ru/v2";
+
+const CDEK_RATE_WINDOW_MS = 60_000;
+const CDEK_RATE_MAX_PER_USER = 40;
+
+const cdekRateBuckets = new Map<string, { count: number; resetAt: number }>();
+
+function cdekRateLimitAllows(userId: string): boolean {
+  const now = Date.now();
+  const bucket = cdekRateBuckets.get(userId);
+  if (!bucket || now >= bucket.resetAt) {
+    cdekRateBuckets.set(userId, { count: 1, resetAt: now + CDEK_RATE_WINDOW_MS });
+    return true;
+  }
+  if (bucket.count >= CDEK_RATE_MAX_PER_USER) return false;
+  bucket.count += 1;
+  return true;
+}
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -182,17 +200,17 @@ function mapUnknownCdekStatus(latest: CdekOrderStatus): DeliveryStatus {
   return "created";
 }
 
+function statusTimeMs(status: CdekOrderStatus): number {
+  const raw = String(status.date_time ?? "").trim();
+  if (!raw) return 0;
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? t : 0;
+}
+
 function mapCdekStatus(statuses: CdekOrderStatus[]): DeliveryStatus {
   if (statuses.length === 0) return "created";
 
-  const sorted = [...statuses].sort((a, b) => {
-    const ta = String(a.date_time ?? "").trim();
-    const tb = String(b.date_time ?? "").trim();
-    if (!ta && !tb) return 0;
-    if (!ta) return -1;
-    if (!tb) return 1;
-    return ta.localeCompare(tb);
-  });
+  const sorted = [...statuses].sort((a, b) => statusTimeMs(a) - statusTimeMs(b));
   const latest = sorted[sorted.length - 1]!;
   const key = normalizeCdekStatusCode(latest.code);
   const mapped = key ? CDEK_CODE_TO_PANEL[key] : undefined;
@@ -336,6 +354,21 @@ async function fetchAllOrderVariants(token: string, track: string, orderNumber?:
 }
 
 export async function GET(request: NextRequest) {
+  if (!isDatabaseConfigured()) {
+    return NextResponse.json({ error: "Не задан DATABASE_URL." }, { status: 503 });
+  }
+  const user = await getSessionUser();
+  if (!user) {
+    return NextResponse.json({ error: "Требуется вход." }, { status: 401 });
+  }
+
+  if (!cdekRateLimitAllows(user.id)) {
+    return NextResponse.json(
+      { error: "Слишком много запросов к СДЭК. Подождите минуту." },
+      { status: 429 },
+    );
+  }
+
   const track = request.nextUrl.searchParams.get("track")?.trim();
   const orderNumber = request.nextUrl.searchParams.get("orderNumber")?.trim();
 

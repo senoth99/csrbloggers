@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Plus, Search, ChevronDown, X } from "lucide-react";
+import { IntegrationDetailScreen } from "@/screens/IntegrationDetailScreen";
+import { FilterChips, SlideOver, StatusBadgeDropdown } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { usePanelData } from "@/context/PanelDataContext";
 import { abbreviateFio, findEmployeeIdByPanelSession } from "@/lib/employee-utils";
@@ -35,6 +37,8 @@ import { parseBudgetReachField } from "@/lib/integration-metrics";
 import { useTableSort } from "@/hooks/useTableSort";
 import { localReleaseDateTimeMs } from "@/lib/panel-tasks";
 import {
+  crmPageHeaderRowClass,
+  crmPageTitleClass,
   primaryActionButtonClass,
   selectNativeChevronPad,
   tableBodyRowBorderClass,
@@ -76,8 +80,15 @@ function panelReleaseSortMs(row: Integration): number {
   return p ? p.getTime() : 0;
 }
 
-export function PanelScreen() {
+function escapeCsvCell(value: string): string {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+export function IntegrationsScreen() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedId = searchParams.get("id");
   const { sort, toggleSort, sortKey, sortDir } = useTableSort<PanelSortKey>();
   const { currentUsername } = useAuth();
   const {
@@ -88,6 +99,7 @@ export function PanelScreen() {
     employees,
     isAdmin,
     addIntegration,
+    updateIntegration,
   } = usePanelData();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -117,8 +129,14 @@ export function PanelScreen() {
   /** all | IntegrationCooperationType | __no_coop__ */
   const [cooperationFilter, setCooperationFilter] = useState<string>("all");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [extraFiltersOpen, setExtraFiltersOpen] = useState(false);
+  const [contractorFilter, setContractorFilter] = useState<string>("all");
   const [formEmployeeId, setFormEmployeeId] = useState<string>("");
   const [monthFilter, setMonthFilter] = useState<string>("all");
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [tableHovered, setTableHovered] = useState(false);
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
 
   const byContractor = useMemo(() => {
     const m = new Map<string, string>();
@@ -264,14 +282,165 @@ export function PanelScreen() {
     });
     if (id) {
       closeAddModal();
-      router.push(`/integrations/${id}`);
+      setHighlightId(id);
+      router.push(`/integrations?id=${encodeURIComponent(id)}`);
     } else {
       setAddFormError("Не удалось создать интеграцию (заголовок занят или нет данных).");
     }
   }
 
+  useEffect(() => {
+    if (!highlightId) return;
+    const t = window.setTimeout(() => setHighlightId(null), 2000);
+    return () => window.clearTimeout(t);
+  }, [highlightId]);
+
+  const closeDetail = useCallback(() => {
+    router.push("/integrations");
+  }, [router]);
+
   function openRow(id: string) {
-    router.push(`/integrations/${id}`);
+    router.push(`/integrations?id=${encodeURIComponent(id)}`);
+  }
+
+  const showBulkColumn = tableHovered || selectedIds.size > 0;
+
+  const filterChips = useMemo(() => {
+    const chips: { id: string; label: string; onRemove: () => void }[] = [];
+    if (statusFilter !== "all") {
+      chips.push({
+        id: "status",
+        label: INTEGRATION_STATUS_LABELS[statusFilter],
+        onRemove: () => setStatusFilter("all"),
+      });
+    }
+    if (monthFilter !== "all") {
+      const label = monthOptions.find((o) => o.value === monthFilter)?.label ?? monthFilter;
+      chips.push({ id: "month", label, onRemove: () => setMonthFilter("all") });
+    }
+    if (contractorFilter !== "all") {
+      const name = byContractor.get(contractorFilter) ?? contractorFilter;
+      chips.push({
+        id: "contractor",
+        label: name,
+        onRemove: () => setContractorFilter("all"),
+      });
+    }
+    if (platformFilter !== "all") {
+      const label =
+        socialOptions.find((o) => o.id === platformFilter)?.label ?? platformFilter;
+      chips.push({ id: "platform", label, onRemove: () => setPlatformFilter("all") });
+    }
+    if (cityFilter !== "all") {
+      const label =
+        cityFilter === "__empty__" ? "Без города" : cityFilter;
+      chips.push({ id: "city", label, onRemove: () => setCityFilter("all") });
+    }
+    if (employeeFilter !== "all") {
+      const label =
+        employeeFilter === "unassigned"
+          ? "Не назначен"
+          : abbreviateFio(byEmployee.get(employeeFilter)?.fullName ?? "");
+      chips.push({ id: "employee", label, onRemove: () => setEmployeeFilter("all") });
+    }
+    if (nicheFilter !== "all") {
+      const label =
+        nicheFilter === "__no_niche__"
+          ? "Без ниши"
+          : nicheChoiceCaption(
+              nicheOptions.find((o) => o.id === nicheFilter)?.label ?? nicheFilter,
+            );
+      chips.push({ id: "niche", label, onRemove: () => setNicheFilter("all") });
+    }
+    if (sizeCategoryFilter !== "all") {
+      const label =
+        sizeCategoryFilter === "__no_size__"
+          ? "Без категории"
+          : CONTRACTOR_SIZE_CATEGORY_LABELS[
+              sizeCategoryFilter as keyof typeof CONTRACTOR_SIZE_CATEGORY_LABELS
+            ];
+      chips.push({ id: "size", label, onRemove: () => setSizeCategoryFilter("all") });
+    }
+    if (cooperationFilter !== "all") {
+      const label =
+        cooperationFilter === "__no_coop__"
+          ? "Не указано"
+          : INTEGRATION_COOPERATION_LABELS[
+              cooperationFilter as IntegrationCooperationType
+            ];
+      chips.push({ id: "coop", label, onRemove: () => setCooperationFilter("all") });
+    }
+    return chips;
+  }, [
+    statusFilter,
+    monthFilter,
+    contractorFilter,
+    platformFilter,
+    cityFilter,
+    employeeFilter,
+    nicheFilter,
+    sizeCategoryFilter,
+    cooperationFilter,
+    monthOptions,
+    byContractor,
+    socialOptions,
+    byEmployee,
+    nicheOptions,
+  ]);
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function handleBulkStatus(status: IntegrationStatus) {
+    for (const id of Array.from(selectedIds)) {
+      updateIntegration(id, { status });
+    }
+    setBulkStatusOpen(false);
+    setSelectedIds(new Set());
+  }
+
+  function handleExportSelected() {
+    const rows = integrations.filter((i) => selectedIds.has(i.id));
+    const header = [
+      "ID",
+      "Заголовок",
+      "Статус",
+      "Контрагент",
+      "Площадка",
+      "Дата выхода",
+      "Бюджет",
+      "Охваты",
+    ];
+    const lines = [
+      header.join(","),
+      ...rows.map((i) =>
+        [
+          i.id,
+          i.title ?? "",
+          INTEGRATION_STATUS_LABELS[i.status],
+          byContractor.get(i.contractorId) ?? "",
+          socialOptions.find((o) => o.id === i.socialNetworkId)?.label ?? "",
+          i.releaseDate ?? "",
+          i.budget != null ? String(i.budget) : "",
+          i.reach != null ? String(i.reach) : "",
+        ]
+          .map(escapeCsvCell)
+          .join(","),
+      ),
+    ];
+    const blob = new Blob(["\uFEFF" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `integrations-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   const canAdd = isAdmin && contractors.length > 0 && socialOptions.length > 0;
@@ -319,6 +488,7 @@ export function PanelScreen() {
           return false;
         }
       }
+      if (contractorFilter !== "all" && row.contractorId !== contractorFilter) return false;
       if (monthFilter !== "all" && !row.releaseDate?.startsWith(monthFilter)) return false;
       const q = tableSearch.trim().toLowerCase();
       if (!q) return true;
@@ -373,6 +543,7 @@ export function PanelScreen() {
     sizeCategoryFilter,
     cooperationFilter,
     monthFilter,
+    contractorFilter,
     byContractor,
     contractorById,
     socialOptions,
@@ -481,15 +652,13 @@ export function PanelScreen() {
 
   return (
     <div className="w-full min-w-0 max-w-full space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <h1 className="text-lg font-bold uppercase tracking-[0.12em] text-app-fg min-[400px]:text-xl md:text-2xl">
-          Интеграции
-        </h1>
+      <div className={crmPageHeaderRowClass}>
+        <h1 className={crmPageTitleClass}>Интеграции</h1>
         {isAdmin && (
           <button
             type="button"
             onClick={openAddModal}
-            className={`${primaryActionButtonClass} w-full shrink-0 sm:w-auto`}
+            className={`${primaryActionButtonClass} max-md:hidden w-full shrink-0 sm:w-auto`}
           >
             <Plus className="h-4 w-4" strokeWidth={1.5} />
             Добавить интеграцию
@@ -516,35 +685,70 @@ export function PanelScreen() {
           </label>
           <button
             type="button"
-            onClick={() => setMobileFiltersOpen((o) => !o)}
-            aria-expanded={mobileFiltersOpen}
+            onClick={() => setMobileFiltersOpen(true)}
             className="flex w-full min-h-[44px] items-center justify-between gap-2 border border-app-fg/15 bg-app-bg px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-fg/30 md:hidden"
           >
             <span>Фильтры</span>
-            <ChevronDown
-              className={`h-4 w-4 shrink-0 text-app-fg/50 transition-transform ${mobileFiltersOpen ? "rotate-180" : ""}`}
-              strokeWidth={2}
-              aria-hidden
-            />
+            <ChevronDown className="h-4 w-4 shrink-0 text-app-fg/50" strokeWidth={2} aria-hidden />
           </button>
-          <div
-            className={`grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 ${mobileFiltersOpen ? "" : "max-md:hidden"}`}
-          >
-            <select
-              value={statusFilter}
-              onChange={(e) =>
-                setStatusFilter(e.target.value === "all" ? "all" : (e.target.value as IntegrationStatus))
-              }
-              aria-label="Фильтр по статусу"
-              className={filterSelectClass}
-            >
-              <option value="all">Все статусы</option>
-              {INTEGRATION_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {INTEGRATION_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
+          <div className="hidden flex-col gap-2 md:flex">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <select
+                value={statusFilter}
+                onChange={(e) =>
+                  setStatusFilter(
+                    e.target.value === "all" ? "all" : (e.target.value as IntegrationStatus),
+                  )
+                }
+                aria-label="Фильтр по статусу"
+                className={filterSelectClass}
+              >
+                <option value="all">Все статусы</option>
+                {INTEGRATION_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {INTEGRATION_STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={monthFilter}
+                onChange={(e) => setMonthFilter(e.target.value)}
+                aria-label="Фильтр по месяцу"
+                className={filterSelectClass}
+              >
+                <option value="all">Все месяцы</option>
+                {monthOptions.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={contractorFilter}
+                onChange={(e) => setContractorFilter(e.target.value)}
+                aria-label="Фильтр по блогеру"
+                className={filterSelectClass}
+              >
+                <option value="all">Все блогеры</option>
+                {[...contractors]
+                  .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => setExtraFiltersOpen((o) => !o)}
+                aria-expanded={extraFiltersOpen}
+                className={`${filterSelectClass} text-left`}
+              >
+                Ещё фильтры
+              </button>
+            </div>
+            {extraFiltersOpen ? (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
             <select
               value={platformFilter}
               onChange={(e) => setPlatformFilter(e.target.value)}
@@ -638,6 +842,90 @@ export function PanelScreen() {
                 </option>
               ))}
             </select>
+              </div>
+            ) : null}
+          </div>
+          <FilterChips chips={filterChips} />
+        </div>
+      )}
+
+      {selectedIds.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 border border-app-fg/15 bg-app-fg/[0.03] px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-app-fg/70">
+            Выбрано: {selectedIds.size}
+          </span>
+          {isAdmin ? (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setBulkStatusOpen((o) => !o)}
+                className="border border-app-fg/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-fg/35"
+              >
+                Изменить статус
+              </button>
+              {bulkStatusOpen ? (
+                <ul className="absolute left-0 top-full z-20 mt-1 min-w-[10rem] border border-app-fg/15 bg-app-bg py-1 shadow-lg">
+                  {INTEGRATION_STATUSES.map((s) => (
+                    <li key={s}>
+                      <button
+                        type="button"
+                        className="w-full px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 hover:bg-app-fg/[0.06]"
+                        onClick={() => handleBulkStatus(s)}
+                      >
+                        {INTEGRATION_STATUS_LABELS[s]}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+          <button
+            type="button"
+            onClick={handleExportSelected}
+            className="border border-app-fg/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-fg/35"
+          >
+            Экспорт CSV
+          </button>
+        </div>
+      ) : null}
+
+      {mobileFiltersOpen && integrations.length > 0 ? (
+        <div
+          className="fixed inset-0 z-40 flex flex-col bg-app-bg md:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Фильтры"
+        >
+          <div className="flex items-center justify-between border-b border-app-fg/10 px-4 py-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-app-fg">Фильтры</h2>
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen(false)}
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-app-fg/60 transition hover:text-app-fg"
+              aria-label="Закрыть"
+            >
+              <X className="h-5 w-5" strokeWidth={1.5} />
+            </button>
+          </div>
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
+            <select
+              value={statusFilter}
+              onChange={(e) =>
+                setStatusFilter(
+                  e.target.value === "all" ? "all" : (e.target.value as IntegrationStatus),
+                )
+              }
+              aria-label="Фильтр по статусу"
+              className={filterSelectClass}
+            >
+              <option value="all">Все статусы</option>
+              {INTEGRATION_STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {INTEGRATION_STATUS_LABELS[s]}
+                </option>
+              ))}
+            </select>
             <select
               value={monthFilter}
               onChange={(e) => setMonthFilter(e.target.value)}
@@ -646,12 +934,125 @@ export function PanelScreen() {
             >
               <option value="all">Все месяцы</option>
               {monthOptions.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={contractorFilter}
+              onChange={(e) => setContractorFilter(e.target.value)}
+              aria-label="Фильтр по блогеру"
+              className={filterSelectClass}
+            >
+              <option value="all">Все блогеры</option>
+              {[...contractors]
+                .sort((a, b) => a.name.localeCompare(b.name, "ru"))
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+            </select>
+            <select
+              value={platformFilter}
+              onChange={(e) => setPlatformFilter(e.target.value)}
+              aria-label="Фильтр по площадке"
+              className={filterSelectClass}
+            >
+              <option value="all">Все площадки</option>
+              {socialOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+            <select
+              value={cityFilter}
+              onChange={(e) => setCityFilter(e.target.value)}
+              aria-label="Фильтр по городу контрагента"
+              className={filterSelectClass}
+            >
+              <option value="all">Все города</option>
+              {showEmptyCityFilter ? <option value="__empty__">Без города</option> : null}
+              {cityOptions.map((city) => (
+                <option key={city} value={city}>
+                  {city}
+                </option>
+              ))}
+            </select>
+            <select
+              value={employeeFilter}
+              onChange={(e) => setEmployeeFilter(e.target.value)}
+              aria-label="Фильтр по сотруднику"
+              className={filterSelectClass}
+            >
+              <option value="all">Все сотрудники</option>
+              <option value="unassigned">Не назначен</option>
+              {[...employees]
+                .sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"))
+                .map((em) => (
+                  <option key={em.id} value={em.id}>
+                    {abbreviateFio(em.fullName)}
+                  </option>
+                ))}
+            </select>
+            <select
+              value={nicheFilter}
+              onChange={(e) => setNicheFilter(e.target.value)}
+              aria-label="Фильтр по нише контрагента"
+              className={filterSelectClass}
+            >
+              <option value="all">Все ниши</option>
+              {showEmptyNicheFilter ? <option value="__no_niche__">Без ниши</option> : null}
+              {nicheOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {nicheChoiceCaption(o.label)}
+                </option>
+              ))}
+            </select>
+            <select
+              value={sizeCategoryFilter}
+              onChange={(e) => setSizeCategoryFilter(e.target.value)}
+              aria-label="Фильтр по категории контрагента"
+              className={filterSelectClass}
+            >
+              <option value="all">Все категории</option>
+              {showEmptySizeCategoryFilter ? (
+                <option value="__no_size__">Без категории</option>
+              ) : null}
+              {CONTRACTOR_SIZE_CATEGORIES.map((k) => (
+                <option key={k} value={k}>
+                  {CONTRACTOR_SIZE_CATEGORY_LABELS[k]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={cooperationFilter}
+              onChange={(e) => setCooperationFilter(e.target.value)}
+              aria-label="Фильтр по условиям интеграции"
+              className={filterSelectClass}
+            >
+              <option value="all">Все условия</option>
+              {showEmptyCooperationFilter ? <option value="__no_coop__">Не указано</option> : null}
+              {INTEGRATION_COOPERATION_TYPES.map((t) => (
+                <option key={t} value={t}>
+                  {INTEGRATION_COOPERATION_LABELS[t]}
+                </option>
               ))}
             </select>
           </div>
+          <div className="border-t border-app-fg/10 p-4 pb-safe">
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen(false)}
+              className="w-full min-h-[48px] bg-app-accent text-xs font-semibold uppercase tracking-wide text-app-fg transition hover:brightness-125"
+            >
+              Применить
+            </button>
+          </div>
         </div>
-      )}
+      ) : null}
 
       {integrations.length > 0 && filteredIntegrations.length === 0 && (
         <p className="border border-dashed border-app-fg/15 px-4 py-8 text-center text-sm text-app-fg/55">
@@ -660,12 +1061,19 @@ export function PanelScreen() {
       )}
 
       {integrations.length > 0 && filteredIntegrations.length > 0 && (
-        <div className="min-w-0 max-w-full overflow-x-auto rounded-md border border-app-fg/10 bg-app-bg px-2.5 [-webkit-overflow-scrolling:touch] sm:px-3 md:px-0">
+        <div
+          className="min-w-0 max-w-full overflow-x-auto rounded-md border border-app-fg/10 bg-app-bg px-2.5 [-webkit-overflow-scrolling:touch] sm:px-3 md:px-0"
+          onMouseEnter={() => setTableHovered(true)}
+          onMouseLeave={() => setTableHovered(false)}
+        >
           <table className="w-full min-w-0 max-w-full table-auto border-separate border-spacing-0 text-left text-[10px] leading-tight text-app-fg max-md:table-fixed sm:text-xs md:min-w-[960px]">
             <thead>
               <tr
                 className={`bg-app-bg text-[10px] font-semibold uppercase tracking-wide text-app-fg/50 ${tableHeadRowBorderClass}`}
               >
+                {showBulkColumn ? (
+                  <th className="w-8 px-1 py-2.5 align-middle" aria-label="Выбор" />
+                ) : null}
                 <SortableTh
                   columnKey="status"
                   sortKey={sortKey}
@@ -794,6 +1202,8 @@ export function PanelScreen() {
                 const assignee = row.assignedEmployeeId
                   ? byEmployee.get(row.assignedEmployeeId)
                   : undefined;
+                const isHighlighted = highlightId === row.id;
+                const isSelected = selectedIds.has(row.id);
                 return (
                   <tr
                     key={row.id}
@@ -806,12 +1216,49 @@ export function PanelScreen() {
                         openRow(row.id);
                       }
                     }}
-                    className={`cursor-pointer transition hover:bg-app-fg/[0.04] ${tableBodyRowBorderClass}`}
+                    className={`cursor-pointer transition hover:bg-app-fg/[0.04] ${tableBodyRowBorderClass} ${
+                      isHighlighted ? "bg-app-accent/10" : ""
+                    } ${isSelected ? "bg-app-fg/[0.06]" : ""} ${
+                      selectedId === row.id ? "ring-1 ring-inset ring-app-accent/40" : ""
+                    }`}
                   >
-                    <td className="min-w-0 px-2 py-2.5 align-middle max-md:w-[26%] max-md:whitespace-nowrap">
-                      <CrmPill className={STATUS_BADGE_CLASS[row.status]}>
-                        {INTEGRATION_STATUS_LABELS[row.status]}
-                      </CrmPill>
+                    {showBulkColumn ? (
+                      <td
+                        className="w-8 px-1 py-2.5 align-middle"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelected(row.id)}
+                          aria-label={`Выбрать ${row.title ?? row.id}`}
+                          className="h-3.5 w-3.5 accent-app-accent"
+                        />
+                      </td>
+                    ) : null}
+                    <td
+                      className="min-w-0 px-2 py-2.5 align-middle max-md:w-[26%] max-md:whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {isAdmin ? (
+                        <StatusBadgeDropdown
+                          value={row.status}
+                          options={INTEGRATION_STATUSES.map((s) => ({
+                            value: s,
+                            label: INTEGRATION_STATUS_LABELS[s],
+                          }))}
+                          badgeClass={STATUS_BADGE_CLASS[row.status]}
+                          onChange={(s) =>
+                            updateIntegration(row.id, {
+                              status: s as IntegrationStatus,
+                            })
+                          }
+                        />
+                      ) : (
+                        <CrmPill className={STATUS_BADGE_CLASS[row.status]}>
+                          {INTEGRATION_STATUS_LABELS[row.status]}
+                        </CrmPill>
+                      )}
                     </td>
                     <td className="min-w-0 px-2 py-2.5 text-center align-middle max-md:w-[20%] max-md:whitespace-nowrap">
                       <CrmPill className={CHANNEL_BADGE_CLASS}>
@@ -819,14 +1266,12 @@ export function PanelScreen() {
                       </CrmPill>
                     </td>
                     <td className="min-w-0 truncate px-2 py-2.5 align-middle max-md:w-[36%]">
-                      <Link
-                        href={`/integrations/${row.id}`}
+                      <span
                         className="block min-w-0 truncate font-medium text-app-fg"
                         title={row.title ?? undefined}
-                        onClick={(e) => e.stopPropagation()}
                       >
                         {row.title}
-                      </Link>
+                      </span>
                     </td>
                     <td className="hidden min-w-0 whitespace-nowrap px-2 py-2.5 text-right align-middle tabular-nums text-app-fg/55 md:table-cell">
                       {formatRuDate(created)}
@@ -877,44 +1322,67 @@ export function PanelScreen() {
         </div>
       )}
 
-      {integrations.length === 0 && contractors.length > 0 && (
-        <p className="border border-dashed border-app-fg/15 px-4 py-12 text-center text-sm text-app-fg/55">
-          Интеграций пока нет.
-          {isAdmin ? " Нажмите «Добавить интеграцию»." : ""}
-        </p>
+      {integrations.length === 0 && (
+        <div className="flex flex-col items-center gap-4 border border-dashed border-app-fg/15 px-4 py-12 text-center">
+          <p className="text-sm text-app-fg/55">Интеграций пока нет.</p>
+          {isAdmin && canAdd ? (
+            <button type="button" onClick={openAddModal} className={primaryActionButtonClass}>
+              <Plus className="h-4 w-4" strokeWidth={1.5} />
+              Создать первую интеграцию
+            </button>
+          ) : isAdmin && contractors.length === 0 ? (
+            <Link href="/contractors" className={primaryActionButtonClass}>
+              <Plus className="h-4 w-4" strokeWidth={1.5} />
+              Создать первого контрагента
+            </Link>
+          ) : !isAdmin ? (
+            <p className="text-xs text-app-fg/45">Попросите администратора создать интеграцию.</p>
+          ) : null}
+        </div>
       )}
 
-      {isAdmin && isAddOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4">
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="add-integration-title"
-            className="w-full max-w-lg border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6"
-          >
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <h2
-                id="add-integration-title"
-                className="text-sm font-semibold uppercase tracking-[0.1em] text-app-fg"
-              >
-                Новая интеграция
-              </h2>
+      {isAdmin ? (
+        <button
+          type="button"
+          onClick={openAddModal}
+          className="fixed bottom-[4.5rem] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-app-accent text-app-fg shadow-lg transition hover:brightness-125 md:hidden"
+          aria-label="Добавить интеграцию"
+        >
+          <Plus className="h-6 w-6" strokeWidth={1.5} />
+        </button>
+      ) : null}
+
+      <SlideOver
+        open={Boolean(isAdmin && isAddOpen)}
+        onClose={closeAddModal}
+        title="Новая интеграция"
+        footer={
+          canAdd ? (
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={closeAddModal}
-                className="border border-app-fg/15 p-1.5 text-app-fg/70 transition hover:border-app-fg/40"
-                aria-label="Закрыть"
+                className="inline-flex flex-1 items-center justify-center border border-app-fg/15 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/40"
               >
-                <X className="h-4 w-4" strokeWidth={1.5} />
+                Отмена
+              </button>
+              <button
+                type="submit"
+                form="add-integration-form"
+                className={`${primaryActionButtonClass} flex-1`}
+              >
+                Создать
               </button>
             </div>
-
+          ) : undefined
+        }
+      >
             {!canAdd ? (
-              <p className="text-sm text-app-fg/55">
+              <p className="p-4 text-sm text-app-fg/55">
                 Добавьте контрагентов и проверьте список площадок в данных панели.
               </p>
             ) : (
-              <form onSubmit={handleAddSubmit} className="space-y-4">
+              <form id="add-integration-form" onSubmit={handleAddSubmit} className="space-y-4">
                 {addFormError ? (
                   <p className="border border-app-fg/20 bg-app-fg/5 px-3 py-2 text-xs text-app-fg/90">
                     {addFormError}
@@ -981,21 +1449,6 @@ export function PanelScreen() {
                   </label>
                 </div>
 
-                <label className="block text-xs uppercase tracking-wider text-app-fg/55">
-                  Условия сотрудничества
-                  <select
-                    value={cooperationType}
-                    onChange={(e) =>
-                      setCooperationType((e.target.value as IntegrationCooperationType | "") || "")
-                    }
-                    className={`${fieldClass} mt-1 ${selectNativeChevronPad}`}
-                  >
-                    <option value="">Не указано</option>
-                    <option value="barter">Бартер</option>
-                    <option value="commercial">Коммерция</option>
-                  </select>
-                </label>
-
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block text-xs uppercase tracking-wider text-app-fg/55">
                     Дата выхода
@@ -1017,79 +1470,105 @@ export function PanelScreen() {
                   </label>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block text-xs uppercase tracking-wider text-app-fg/55">
-                    Бюджет, ₽
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      autoComplete="off"
-                      value={budgetInput}
-                      onChange={(e) => setBudgetInput(e.target.value)}
-                      placeholder="необязательно"
-                      className={`${fieldClass} mt-1 tabular-nums`}
-                    />
-                  </label>
-                  <label className="block text-xs uppercase tracking-wider text-app-fg/55">
-                    Охваты, шт.
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      autoComplete="off"
-                      value={reachInput}
-                      onChange={(e) => setReachInput(e.target.value)}
-                      placeholder="необязательно"
-                      className={`${fieldClass} mt-1 tabular-nums`}
-                    />
-                  </label>
-                  <label className="block text-xs uppercase tracking-wider text-app-fg/55 sm:col-span-2">
-                    Ссылка на интеграцию
-                    <input
-                      type="url"
-                      inputMode="url"
-                      autoComplete="url"
-                      value={linkInput}
-                      onChange={(e) => setLinkInput(e.target.value)}
-                      placeholder="https://… пост, ролик, сторис"
-                      className={`${fieldClass} mt-1 font-mono text-[13px]`}
-                    />
-                  </label>
-                </div>
+                <details className="border border-app-fg/10">
+                  <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg/70 [&::-webkit-details-marker]:hidden">
+                    ▸ Дополнительно
+                  </summary>
+                  <div className="space-y-4 border-t border-app-fg/10 px-3 py-3">
+                    <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                      Условия сотрудничества
+                      <select
+                        value={cooperationType}
+                        onChange={(e) =>
+                          setCooperationType(
+                            (e.target.value as IntegrationCooperationType | "") || "",
+                          )
+                        }
+                        className={`${fieldClass} mt-1 ${selectNativeChevronPad}`}
+                      >
+                        <option value="">Не указано</option>
+                        <option value="barter">Бартер</option>
+                        <option value="commercial">Коммерция</option>
+                      </select>
+                    </label>
 
-                <div>
-                  <label className="block text-xs uppercase tracking-wider text-app-fg/55">Сотрудник</label>
-                  <select
-                    value={formEmployeeId}
-                    onChange={(e) => setFormEmployeeId(e.target.value)}
-                    className={`${fieldClass} mt-1 ${selectNativeChevronPad}`}
-                  >
-                    <option value="">Без сотрудника</option>
-                    {employees.map((e) => (
-                      <option key={e.id} value={e.id}>{e.fullName}</option>
-                    ))}
-                  </select>
-                </div>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                        Бюджет, ₽
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={budgetInput}
+                          onChange={(e) => setBudgetInput(e.target.value)}
+                          placeholder="необязательно"
+                          className={`${fieldClass} mt-1 tabular-nums`}
+                        />
+                      </label>
+                      <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                        Охваты, шт.
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          autoComplete="off"
+                          value={reachInput}
+                          onChange={(e) => setReachInput(e.target.value)}
+                          placeholder="необязательно"
+                          className={`${fieldClass} mt-1 tabular-nums`}
+                        />
+                      </label>
+                      <label className="block text-xs uppercase tracking-wider text-app-fg/55 sm:col-span-2">
+                        Ссылка на интеграцию
+                        <input
+                          type="url"
+                          inputMode="url"
+                          autoComplete="url"
+                          value={linkInput}
+                          onChange={(e) => setLinkInput(e.target.value)}
+                          placeholder="https://… пост, ролик, сторис"
+                          className={`${fieldClass} mt-1 font-mono text-[13px]`}
+                        />
+                      </label>
+                    </div>
 
-                <div className="flex flex-wrap gap-2 pt-1">
-                  <button
-                    type="submit"
-                    className={`${primaryActionButtonClass} flex-1 sm:flex-none`}
-                  >
-                    Создать
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closeAddModal}
-                    className="inline-flex flex-1 items-center justify-center border border-app-fg/15 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/40 sm:flex-none"
-                  >
-                    Отмена
-                  </button>
-                </div>
+                    <div>
+                      <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                        Сотрудник
+                      </label>
+                      <select
+                        value={formEmployeeId}
+                        onChange={(e) => setFormEmployeeId(e.target.value)}
+                        className={`${fieldClass} mt-1 ${selectNativeChevronPad}`}
+                      >
+                        <option value="">Без сотрудника</option>
+                        {employees.map((e) => (
+                          <option key={e.id} value={e.id}>
+                            {e.fullName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </details>
+
               </form>
             )}
-          </div>
-        </div>
-      )}
+      </SlideOver>
+
+      <SlideOver
+        open={Boolean(selectedId)}
+        onClose={closeDetail}
+        widthClass="md:max-w-2xl"
+        hideHeader
+      >
+        {selectedId ? (
+          <IntegrationDetailScreen
+            integrationId={selectedId}
+            variant="drawer"
+            onClose={closeDetail}
+          />
+        ) : null}
+      </SlideOver>
 
       <ContractorListModal
         open={isContractorPickerOpen && isAddOpen}

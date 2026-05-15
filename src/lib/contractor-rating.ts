@@ -1,5 +1,5 @@
 import { computeCpmRub } from "@/lib/integration-metrics";
-import type { Integration } from "@/types/panel-data";
+import { isPublishedIntegrationStatus, type Integration } from "@/types/panel-data";
 
 function budgetRub(i: Pick<Integration, "budget" | "amount">): number | undefined {
   const b = i.budget ?? i.amount;
@@ -34,14 +34,15 @@ export function computeContractorRating10(
   integrations: Integration[],
   itemCount: number,
 ): number {
-  const nInt = integrations.length;
+  const published = integrations.filter((i) => isPublishedIntegrationStatus(i.status));
+  const nInt = published.length;
 
   let sumBudget = 0;
   let sumReach = 0;
   const rowCpms: number[] = [];
   let goodLowCpmCount = 0;
 
-  for (const i of integrations) {
+  for (const i of published) {
     const b = budgetRub(i);
     const r = i.reach;
     const cpm = computeCpmRub(b, r);

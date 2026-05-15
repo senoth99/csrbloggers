@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { usePanelData } from "@/context/PanelDataContext";
 import { ContractorRatingBadge } from "@/components/ContractorRatingBadge";
 import { computeContractorRating10 } from "@/lib/contractor-rating";
+import { useDialogA11y } from "@/lib/focus-trap";
 import type { Contractor } from "@/types/panel-data";
 import { listDivideClass } from "@/screens/dashboard-shared";
 
@@ -30,6 +31,9 @@ export function ContractorListModal({
 }: Props) {
   const { integrations, contractorItems } = usePanelData();
   const [query, setQuery] = useState("");
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  const { onKeyDownTrap } = useDialogA11y(open, onClose, panelRef);
 
   const filtered = useMemo(() => {
     const sorted = [...contractors].sort((a, b) => {
@@ -46,25 +50,67 @@ export function ContractorListModal({
     });
   }, [contractors, query]);
 
+  const integrationsByContractor = useMemo(() => {
+    const m = new Map<string, typeof integrations>();
+    for (const i of integrations) {
+      const list = m.get(i.contractorId);
+      if (list) list.push(i);
+      else m.set(i.contractorId, [i]);
+    }
+    return m;
+  }, [integrations]);
+
+  const itemCountByContractor = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of contractorItems) {
+      m.set(it.contractorId, (m.get(it.contractorId) ?? 0) + 1);
+    }
+    return m;
+  }, [contractorItems]);
+
   const ratingById = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of filtered) {
-      const ints = integrations.filter((i) => i.contractorId === c.id);
-      const nItems = contractorItems.filter((it) => it.contractorId === c.id).length;
+      const ints = integrationsByContractor.get(c.id) ?? [];
+      const nItems = itemCountByContractor.get(c.id) ?? 0;
       m.set(c.id, computeContractorRating10(ints, nItems));
     }
     return m;
-  }, [filtered, integrations, contractorItems]);
+  }, [filtered, integrationsByContractor, itemCountByContractor]);
+
+  useEffect(() => {
+    if (!open) setQuery("");
+  }, [open]);
 
   if (!open) return null;
 
   return (
     <div
       className={`fixed inset-0 ${zIndexClass} flex items-center justify-center bg-black/75 px-4`}
+      role="presentation"
+      onClick={onClose}
     >
-      <div className="w-full max-w-2xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6">
+      <div
+        className="absolute inset-0"
+        aria-hidden
+        inert
+      />
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        className="relative w-full max-w-2xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6"
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onKeyDownTrap}
+      >
         <div className="mb-4 flex items-start justify-between gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-app-fg">{title}</h3>
+          <h3
+            id={titleId}
+            className="text-sm font-semibold uppercase tracking-[0.1em] text-app-fg"
+          >
+            {title}
+          </h3>
           <button
             type="button"
             onClick={onClose}
@@ -78,7 +124,7 @@ export function ContractorListModal({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Поиск по ФИО или нику..."
+          placeholder="Поиск по контактному лицу или нику..."
           className={`${searchField} mb-4`}
         />
 
@@ -98,14 +144,14 @@ export function ContractorListModal({
                   }}
                   className="block w-full px-4 py-3.5 text-left transition hover:bg-app-fg/[0.04]"
                 >
-                <p className="flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wide text-app-fg">
-                  <span>{contractor.name}</span>
-                  <ContractorRatingBadge value={ratingById.get(contractor.id) ?? 5} />
-                </p>
-                <p className="mt-0.5 text-sm text-app-fg/65">
-                  {contractor.contactPerson?.trim() || "Без ФИО"}
-                </p>
-              </button>
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-semibold uppercase tracking-wide text-app-fg">
+                    <span>{contractor.name}</span>
+                    <ContractorRatingBadge value={ratingById.get(contractor.id) ?? 5} />
+                  </p>
+                  <p className="mt-0.5 text-sm text-app-fg/65">
+                    {contractor.contactPerson?.trim() || "Без контактного лица"}
+                  </p>
+                </button>
               ))}
             </div>
           )}

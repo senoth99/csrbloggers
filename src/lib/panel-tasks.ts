@@ -46,20 +46,22 @@ export function integrationReleaseVerifyTaskKey(integrationId: string): string {
 }
 
 /**
- * Локальная отметка времени выхода (YYYY-MM-DD + HH:mm). Нужны оба поля.
- * @returns epoch ms или null
+ * Локальная отметка времени выхода (YYYY-MM-DD + необязательный HH:mm).
+ * Без времени — начало локального дня (00:00).
+ * @returns epoch ms или null, если дата не задана или не разбирается
  */
 export function localReleaseDateTimeMs(
   releaseDateYmd: string | undefined,
   releaseTimeHm: string | undefined,
 ): number | null {
   const d = releaseDateYmd?.trim();
-  const t = releaseTimeHm?.trim();
-  if (!d || !t) return null;
+  if (!d) return null;
   const base = parseYmdLocal(d);
   if (!base) return null;
+  const t = releaseTimeHm?.trim();
+  if (!t) return startOfLocalDay(base).getTime();
   const m = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(t);
-  if (!m) return null;
+  if (!m) return startOfLocalDay(base).getTime();
   const dt = new Date(
     base.getFullYear(),
     base.getMonth(),
@@ -78,6 +80,10 @@ export function integrationReachTaskOpensAt(releaseDateYmd: string): Date | null
   if (!d) return null;
   const fifth = addCalendarDaysLocal(startOfLocalDay(d), 5);
   return startOfLocalDay(fifth);
+}
+
+function integrationReachIsFilled(reach: number | null | undefined): boolean {
+  return typeof reach === "number" && !Number.isNaN(reach) && reach > 0;
 }
 
 export function buildOpenTasks(params: {
@@ -121,7 +127,7 @@ export function buildOpenTasks(params: {
     if (!rd) continue;
     const opens = integrationReachTaskOpensAt(rd);
     if (!opens || now.getTime() < opens.getTime()) continue;
-    if (typeof row.reach === "number" && !Number.isNaN(row.reach)) continue;
+    if (integrationReachIsFilled(row.reach)) continue;
     const key = integrationReachTaskKey(row.id);
     if (params.completedKeys.has(key)) continue;
 
@@ -146,11 +152,7 @@ export function buildOpenTasks(params: {
     if (!isPublishedIntegrationStatus(row.status)) continue;
     const assignee = row.assignedEmployeeId?.trim();
     if (!assignee) continue;
-    let releaseMs = localReleaseDateTimeMs(row.releaseDate, row.releaseTime);
-    if (releaseMs === null && row.releaseDate?.trim()) {
-      const d = parseYmdLocal(row.releaseDate.trim());
-      if (d) releaseMs = startOfLocalDay(d).getTime();
-    }
+    const releaseMs = localReleaseDateTimeMs(row.releaseDate, row.releaseTime);
     if (releaseMs === null || now.getTime() < releaseMs) continue;
     const key = integrationReleaseVerifyTaskKey(row.id);
     if (params.completedKeys.has(key)) continue;
@@ -174,5 +176,146 @@ export function buildOpenTasks(params: {
   }
 
   out.sort((a, b) => a.deadlineMs - b.deadlineMs);
+  return out;
+}
+
+/** Ключ выполненной задачи ещё актуален (не зомби). */
+function completedTaskKeyStillValid(
+  key: string,
+  deliveries: Delivery[],
+  integrations: Integration[],
+  now: Date,
+): boolean {
+  if (key.startsWith(DELIVERY_PREFIX)) {
+    const id = key.slice(DELIVERY_PREFIX.length);
+    const d = deliveries.find((x) => x.id === id);
+    return !!d && d.status === "delivered";
+  }
+  if (key.startsWith(INTEGRATION_PREFIX)) {
+    const id = key.slice(INTEGRATION_PREFIX.length);
+    const row = integrations.find((x) => x.id === id);
+    return (
+      !!row &&
+      isPublishedIntegrationStatus(row.status) &&
+      integrationReachIsFilled(row.reach)
+    );
+  }
+  if (key.startsWith(INTEGRATION_RELEASE_VERIFY_PREFIX)) {
+    const id = key.slice(INTEGRATION_RELEASE_VERIFY_PREFIX.length);
+    const row = integrations.find((x) => x.id === id);
+    if (!row || !isPublishedIntegrationStatus(row.status)) return false;
+    const releaseMs = localReleaseDateTimeMs(row.releaseDate, row.releaseTime);
+    if (releaseMs === null || now.getTime() < releaseMs) return false;
+    return true;
+  }
+  return false;
+}
+
+/** Ключи выполненных задач, которые больше не соответствуют данным (зомби). */
+export function staleCompletedTaskKeys(
+  keys: string[],
+  deliveries: Delivery[],
+  integrations: Integration[],
+  now?: Date,
+): string[] {
+  const n = now ?? new Date();
+  return keys.filter(
+    (key) => !completedTaskKeyStillValid(key, deliveries, integrations, n),
+  );
+}
+
+/** Задачи, отмеченные выполненными (для секции «Выполнено»). */
+export function buildCompletedTasks(params: {
+  deliveries: Delivery[];
+  integrations: Integration[];
+  contractors: Contractor[];
+  completedKeys: Set<string>;
+  now?: Date;
+}): PanelTask[] {
+  if (params.completedKeys.size === 0) return [];
+  const now = params.now ?? new Date();
+  const contractorName = new Map<string, string>();
+  for (const c of params.contractors) {
+    contractorName.set(c.id, c.name);
+  }
+
+  const integrationById = new Map(params.integrations.map((i) => [i.id, i]));
+  const deliveryById = new Map(params.deliveries.map((d) => [d.id, d]));
+  const out: PanelTask[] = [];
+
+  for (const key of Array.from(params.completedKeys)) {
+    if (!completedTaskKeyStillValid(key, params.deliveries, params.integrations, now)) {
+      continue;
+    }
+
+    if (key.startsWith(DELIVERY_PREFIX)) {
+      const id = key.slice(DELIVERY_PREFIX.length);
+      const d = deliveryById.get(id);
+      if (!d) continue;
+      const eventIso = d.deliveredAt ?? d.updatedAt ?? d.createdAt ?? now.toISOString();
+      const deadline = deadlineEodAfterEventDay(eventIso);
+      out.push({
+        key,
+        kind: "delivery_notify",
+        title: "Отписать контрагенту, что посылка пришла",
+        detail: `Трек ${d.trackNumber} · ${contractorName.get(d.contractorId)?.trim() || "контрагент"}`,
+        href: `/deliveries/${d.id}`,
+        employeeId: d.assignedEmployeeId,
+        deadlineIso: deadline.toISOString(),
+        isOverdue: false,
+        deadlineMs: deadline.getTime(),
+      });
+      continue;
+    }
+
+    if (key.startsWith(INTEGRATION_PREFIX)) {
+      const id = key.slice(INTEGRATION_PREFIX.length);
+      const row = integrationById.get(id);
+      if (!row) continue;
+      const rd = row.releaseDate?.trim();
+      if (!rd) continue;
+      const opens = integrationReachTaskOpensAt(rd);
+      if (!opens) continue;
+      const deadline = deadlineEodAfterEventDay(opens.toISOString());
+      out.push({
+        key,
+        kind: "integration_reach",
+        title: "Ввести охваты по интеграции",
+        detail: row.title?.trim() || "Интеграция",
+        href: `/integrations/${row.id}`,
+        integrationId: row.id,
+        employeeId: row.assignedEmployeeId,
+        deadlineIso: deadline.toISOString(),
+        isOverdue: false,
+        deadlineMs: deadline.getTime(),
+      });
+      continue;
+    }
+
+    if (key.startsWith(INTEGRATION_RELEASE_VERIFY_PREFIX)) {
+      const id = key.slice(INTEGRATION_RELEASE_VERIFY_PREFIX.length);
+      const row = integrationById.get(id);
+      if (!row) continue;
+      const releaseMs = localReleaseDateTimeMs(row.releaseDate, row.releaseTime);
+      if (releaseMs === null) continue;
+      const eventIso = new Date(releaseMs).toISOString();
+      const deadline = deadlineEodAfterEventDay(eventIso);
+      const planLine = formatIntegrationReleaseLine(row.releaseDate, row.releaseTime);
+      out.push({
+        key,
+        kind: "integration_release_verify",
+        title: "Убедиться в выходе интеграции",
+        detail: `${row.title?.trim() || "Интеграция"} · план: ${planLine}`,
+        href: `/integrations/${row.id}`,
+        integrationId: row.id,
+        employeeId: row.assignedEmployeeId,
+        deadlineIso: deadline.toISOString(),
+        isOverdue: false,
+        deadlineMs: deadline.getTime(),
+      });
+    }
+  }
+
+  out.sort((a, b) => b.deadlineMs - a.deadlineMs);
   return out;
 }

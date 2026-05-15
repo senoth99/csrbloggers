@@ -22,6 +22,15 @@ export function formatYearMonthString(ym: YearMonth): string {
   return `${ym.year}-${String(ym.month).padStart(2, "0")}`;
 }
 
+/**
+ * Календарная семантика дат в метриках:
+ *
+ * - `ymdInYearMonth` — поля `YYYY-MM-DD` (releaseDate): месяц по префиксу строки, без TZ.
+ * - `isoInYearMonth` — полные ISO-метки (createdAt, updatedAt): месяц по UTC-календарю.
+ * - `dateIsoInYearMonth` — сначала YYYY-MM-DD-префикс (как ymd), иначе isoInYearMonth.
+ *
+ * Не смешивайте оси: KPI «выход» → releaseDate + ymd; «создано» → createdAt + iso.
+ */
 export function isoInYearMonth(iso: string | undefined, ym: YearMonth): boolean {
   if (!iso?.trim()) return false;
   const d = new Date(iso);
@@ -30,10 +39,19 @@ export function isoInYearMonth(iso: string | undefined, ym: YearMonth): boolean 
 }
 
 /** Match YYYY-MM-DD date string against a YearMonth (no timezone shift). */
-function ymdInYearMonth(ymd: string | undefined, ym: YearMonth): boolean {
+export function ymdInYearMonth(ymd: string | undefined, ym: YearMonth): boolean {
   if (!ymd?.trim()) return false;
   const prefix = `${ym.year}-${String(ym.month).padStart(2, "0")}`;
   return ymd.trim().startsWith(prefix);
+}
+
+/** ISO timestamp or YYYY-MM-DD prefix → календарный месяц (см. блок выше). */
+export function dateIsoInYearMonth(iso: string | undefined, ym: YearMonth): boolean {
+  if (!iso?.trim()) return false;
+  const t = iso.trim();
+  const ymd = /^\d{4}-\d{2}-\d{2}/.exec(t);
+  if (ymd) return ymdInYearMonth(ymd[0], ym);
+  return isoInYearMonth(iso, ym);
 }
 
 export function monthTitleRu(ym: YearMonth): string {
@@ -106,16 +124,19 @@ export function deliveriesCreatedInMonth(
   return deliveries.filter((d) => isoInYearMonth(d.createdAt, ym));
 }
 
-/** Доставки «Получено», у которых обновление или создание попало в месяц */
+/**
+ * Доставки «Получено» в календарном месяце по deliveredAt (или updatedAt для legacy без deliveredAt).
+ * createdAt не используется — месяц создания записи ≠ месяц получения.
+ */
 export function deliveriesDeliveredInMonth(
   deliveries: Delivery[],
   ym: YearMonth,
 ): Delivery[] {
   return deliveries.filter((d) => {
     if (d.status !== "delivered") return false;
-    if (isoInYearMonth(d.updatedAt, ym)) return true;
-    if (!d.updatedAt?.trim()) return isoInYearMonth(d.createdAt, ym);
-    return false;
+    const anchor = d.deliveredAt?.trim() || d.updatedAt?.trim();
+    if (!anchor) return false;
+    return dateIsoInYearMonth(anchor, ym);
   });
 }
 

@@ -10,18 +10,13 @@ import {
   requestIsHttps,
 } from "@/lib/panel-session-server";
 import { isDatabaseConfigured } from "@/lib/auth-session-prisma";
-
-const MAX_ATTEMPTS = 10;
-const WINDOW_MS = 15 * 60 * 1000;
-const loginAttempts = new Map<string, { n: number; until: number }>();
-
-function clientIp(req: Request): string {
-  return (
-    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.headers.get("x-real-ip") ||
-    "unknown"
-  );
-}
+import {
+  clearLoginAttempts,
+  clientIpFromRequest,
+  loginRateLimitAllows,
+  loginRateLimitKey,
+  recordLoginFailure,
+} from "@/lib/login-rate-limit";
 
 export async function POST(request: Request) {
   if (!isDatabaseConfigured()) {
@@ -29,16 +24,6 @@ export async function POST(request: Request) {
   }
   if (!getSessionSecret()) {
     return NextResponse.json({ error: "Не задан SESSION_SECRET." }, { status: 503 });
-  }
-
-  const ip = clientIp(request);
-  const now = Date.now();
-  const entry = loginAttempts.get(ip);
-  if (entry && now < entry.until && entry.n >= MAX_ATTEMPTS) {
-    return NextResponse.json(
-      { error: "Слишком много попыток. Подождите 15 минут." },
-      { status: 429 },
-    );
   }
 
   let body: { login?: string; password?: string };
@@ -49,15 +34,22 @@ export async function POST(request: Request) {
   }
 
   const loginNorm = normalizeUsername(body.login ?? "");
+  const ip = clientIpFromRequest(request);
+  const rateKey = loginRateLimitKey(loginNorm || "*", ip);
+  if (!(await loginRateLimitAllows(rateKey))) {
+    return NextResponse.json(
+      { error: "Слишком много попыток. Подождите 15 минут." },
+      { status: 429 },
+    );
+  }
+
   const password = typeof body.password === "string" ? body.password : "";
   if (!loginNorm || !password) {
     return NextResponse.json({ error: "Укажите логин и пароль." }, { status: 400 });
   }
 
   const fail = () => {
-    const e = loginAttempts.get(ip);
-    if (!e || now >= e.until) loginAttempts.set(ip, { n: 1, until: now + WINDOW_MS });
-    else e.n++;
+    void recordLoginFailure(rateKey);
     return NextResponse.json({ error: "Неверный логин или пароль." }, { status: 401 });
   };
 
@@ -67,7 +59,7 @@ export async function POST(request: Request) {
   const ok = await verifyPassword(password, user.passwordHash, loginNorm);
   if (!ok) return fail();
 
-  loginAttempts.delete(ip);
+  await clearLoginAttempts(rateKey);
 
   // Migrate legacy SHA-256 hash to scrypt on successful login
   if (!user.passwordHash.startsWith("scrypt:")) {

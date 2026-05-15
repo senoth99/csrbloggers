@@ -1,13 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+} from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Plus, Search, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { usePanelData } from "@/context/PanelDataContext";
-import { abbreviateFio, findEmployeeIdByPanelSession } from "@/lib/employee-utils";
+import { useUndo } from "@/context/UndoContext";
+import { abbreviateFio, resolveSessionEmployeeId } from "@/lib/employee-utils";
 import { SortableTh } from "@/components/SortableTh";
+import {
+  FilterChips,
+  HorizontalScrollTable,
+  SlideOver,
+  StatusBadgeDropdown,
+  type FilterChip,
+} from "@/components/ui";
+import { DeliveryDetailScreen } from "@/screens/DeliveryDetailScreen";
 import { useTableSort } from "@/hooks/useTableSort";
+import { downloadUtf8Csv, rowsToCsv } from "@/lib/csv-export";
 import { compareNumbers, compareStringsRu } from "@/lib/table-sort";
 import {
   DELIVERY_STATUS_LABELS,
@@ -15,6 +34,8 @@ import {
   type DeliveryStatus,
 } from "@/types/panel-data";
 import {
+  crmPageHeaderRowClass,
+  crmPageTitleClass,
   primaryActionButtonClass,
   selectNativeChevronPad,
   tableBodyRowBorderClass,
@@ -55,28 +76,57 @@ function buildImageUrl(raw?: string): string {
 }
 
 export function DeliveriesScreen() {
+  return (
+    <Suspense
+      fallback={
+        <p className="px-4 py-8 text-sm text-app-fg/55">Загрузка доставок…</p>
+      }
+    >
+      <DeliveriesScreenInner />
+    </Suspense>
+  );
+}
+
+function DeliveriesScreenInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedId = searchParams.get("id");
   const { sort, toggleSort, sortKey, sortDir } = useTableSort<DeliverySortKey>();
-  const { currentUsername } = useAuth();
+  const { currentUsername, users } = useAuth();
   const {
     contractors,
     deliveries,
     employees,
     isAdmin,
     addDelivery,
+    removeDelivery,
     updateDeliveryStatus,
   } = usePanelData();
+  const { showUndo } = useUndo();
 
-  const myEmployeeId = findEmployeeIdByPanelSession(employees, currentUsername);
+  const me = users.find(
+    (u) =>
+      u.login.toLowerCase() === (currentUsername ?? "").toLowerCase(),
+  );
+  const myEmployeeId = resolveSessionEmployeeId(
+    me?.employeeId,
+    employees,
+    currentUsername,
+  );
 
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const [contractorId, setContractorId] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
   const [trackNumber, setTrackNumber] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeliveryStatus | "all">("all");
   const [contractorFilter, setContractorFilter] = useState<string>("all");
-  const [employeeFilter, setEmployeeFilter] = useState<string>(() => isAdmin ? "all" : (myEmployeeId ?? "all"));
+  const [employeeFilter, setEmployeeFilter] = useState<string>(() =>
+    isAdmin ? "all" : (myEmployeeId ?? ""),
+  );
   const [isStatusListOpen, setIsStatusListOpen] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [isContractorPickerOpen, setIsContractorPickerOpen] = useState(false);
   const [contractorSearch, setContractorSearch] = useState("");
   const [isItemPickerOpen, setIsItemPickerOpen] = useState(false);
@@ -86,6 +136,9 @@ export function DeliveriesScreen() {
   >([]);
   const [selectedProductId, setSelectedProductId] = useState("");
   const [selectedSize, setSelectedSize] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const [tableHovered, setTableHovered] = useState(false);
+  const [bulkStatusOpen, setBulkStatusOpen] = useState(false);
   const [cdekBanner, setCdekBanner] = useState<{
     kind: "error" | "info";
     text: string;
@@ -188,6 +241,120 @@ export function DeliveriesScreen() {
 
   const onDeliverySort = (key: string) => toggleSort(key as DeliverySortKey);
 
+  const closeDetail = useCallback(() => {
+    const next = new URLSearchParams(searchParams.toString());
+    next.delete("id");
+    const q = next.toString();
+    router.push(q ? `/deliveries?${q}` : "/deliveries", { scroll: false });
+  }, [router, searchParams]);
+
+  function openDeliveryRow(id: string) {
+    const next = new URLSearchParams(searchParams.toString());
+    next.set("id", id);
+    router.push(`/deliveries?${next.toString()}`, { scroll: false });
+  }
+
+  const showBulkColumn = tableHovered || selectedIds.size > 0;
+
+  function toggleSelected(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function handleBulkStatus(status: DeliveryStatus) {
+    for (const id of Array.from(selectedIds)) {
+      updateDeliveryStatus(id, status);
+    }
+    setBulkStatusOpen(false);
+    setSelectedIds(new Set());
+  }
+
+  function handleExportSelected() {
+    const rows = deliveries.filter((d) => selectedIds.has(d.id));
+    const header = [
+      "ID",
+      "Статус",
+      "Заказ",
+      "Трек",
+      "Контрагент",
+      "Сотрудник",
+      "Вещей",
+      "Создано",
+    ];
+    const body = rows.map((d) => {
+      const contractor = contractors.find((c) => c.id === d.contractorId);
+      const assignee = d.assignedEmployeeId
+        ? byEmployee.get(d.assignedEmployeeId)
+        : undefined;
+      return [
+        d.id,
+        DELIVERY_STATUS_LABELS[d.status],
+        d.orderNumber?.trim() ?? "",
+        d.trackNumber,
+        contractor?.contactPerson?.trim() || contractor?.name || "",
+        assignee ? abbreviateFio(assignee.fullName) : "",
+        String(d.items?.length ?? d.itemIds?.length ?? 0),
+        (d.createdAt ?? "").slice(0, 10),
+      ];
+    });
+    downloadUtf8Csv(
+      `deliveries-${new Date().toISOString().slice(0, 10)}.csv`,
+      rowsToCsv(header, body),
+    );
+  }
+
+  const deliveriesByMonth = useMemo(() => {
+    const map = new Map<string, Delivery[]>();
+    for (const row of sortedDeliveries) {
+      const ym = (row.createdAt ?? "").slice(0, 7) || "—";
+      const bucket = map.get(ym) ?? [];
+      bucket.push(row);
+      map.set(ym, bucket);
+    }
+    return Array.from(map.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [sortedDeliveries]);
+
+  const filterChips = useMemo((): FilterChip[] => {
+    const chips: FilterChip[] = [];
+    const q = search.trim();
+    if (q) {
+      chips.push({
+        id: "search",
+        label: `Поиск: ${q}`,
+        onRemove: () => setSearch(""),
+      });
+    }
+    if (statusFilter !== "all") {
+      chips.push({
+        id: "status",
+        label: DELIVERY_STATUS_LABELS[statusFilter],
+        onRemove: () => setStatusFilter("all"),
+      });
+    }
+    if (contractorFilter !== "all") {
+      const c = contractors.find((x) => x.id === contractorFilter);
+      chips.push({
+        id: "contractor",
+        label: c?.contactPerson?.trim() || c?.name || "Контрагент",
+        onRemove: () => setContractorFilter("all"),
+      });
+    }
+    if (employeeFilter !== "all") {
+      const e = byEmployee.get(employeeFilter);
+      chips.push({
+        id: "employee",
+        label: e ? abbreviateFio(e.fullName) : "Сотрудник",
+        onRemove: () =>
+          setEmployeeFilter(isAdmin ? "all" : (myEmployeeId ?? "")),
+      });
+    }
+    return chips;
+  }, [search, statusFilter, contractorFilter, employeeFilter, contractors, byEmployee, isAdmin, myEmployeeId]);
+
   const filteredContractors = useMemo(() => {
     const q = contractorSearch.trim().toLowerCase();
     if (!q) return contractors;
@@ -225,7 +392,7 @@ export function DeliveriesScreen() {
 
   const refreshStatuses = useCallback(
     async (rows: Delivery[], options?: { silent?: boolean }) => {
-      if (rows.length === 0) return;
+      if (!isAdmin || rows.length === 0) return;
       const silent = options?.silent === true;
       if (!silent) setCdekBanner(null);
       const errors = new Set<string>();
@@ -268,7 +435,7 @@ export function DeliveriesScreen() {
         }
       }
     },
-    [updateDeliveryStatus],
+    [isAdmin, updateDeliveryStatus],
   );
 
   useEffect(() => {
@@ -279,13 +446,14 @@ export function DeliveriesScreen() {
   }, [cdekBanner]);
 
   useEffect(() => {
+    if (!isAdmin) return;
     const run = () => {
       void refreshStatuses(deliveriesRef.current, { silent: true });
     };
     run();
     const intervalId = window.setInterval(run, CDEK_REFRESH_INTERVAL_MS);
     return () => window.clearInterval(intervalId);
-  }, [refreshStatuses]);
+  }, [isAdmin, refreshStatuses]);
 
   useEffect(() => {
     let active = true;
@@ -357,11 +525,16 @@ export function DeliveriesScreen() {
     setSelectedSize("");
   }
 
+  function closeAddModal() {
+    setIsAddOpen(false);
+    resetForm();
+  }
+
   function handleAddTrack(e: FormEvent) {
     e.preventDefault();
     if (!contractorId || !trackNumber.trim()) return;
     const assignedEmployeeId = myEmployeeId ?? undefined;
-    addDelivery({
+    const id = addDelivery({
       contractorId,
       orderNumber: orderNumber.trim(),
       trackNumber: trackNumber.trim(),
@@ -370,20 +543,28 @@ export function DeliveriesScreen() {
     });
     resetForm();
     setIsAddOpen(false);
+    if (id) {
+      setHighlightId(id);
+      showUndo("Доставка добавлена", () => removeDelivery(id));
+    }
   }
+
+  useEffect(() => {
+    if (!highlightId) return;
+    const t = window.setTimeout(() => setHighlightId(null), 2000);
+    return () => window.clearTimeout(t);
+  }, [highlightId]);
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold uppercase tracking-[0.12em] text-app-fg md:text-2xl">
-          Доставки
-        </h1>
+      <div className={crmPageHeaderRowClass}>
+        <h1 className={crmPageTitleClass}>Доставки</h1>
         <div className="flex flex-wrap items-center gap-2">
           {isAdmin && (
             <button
               type="button"
               onClick={() => setIsAddOpen(true)}
-              className={primaryActionButtonClass}
+              className={`${primaryActionButtonClass} max-md:hidden`}
             >
               <Plus className="h-4 w-4" strokeWidth={1.5} />
               Добавить трек
@@ -412,8 +593,8 @@ export function DeliveriesScreen() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 gap-2 lg:grid-cols-12 lg:items-stretch">
-        <label className="relative lg:col-span-5">
+      <div className="flex flex-col gap-2">
+        <label className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-app-fg/35" />
           <input
             value={search}
@@ -424,6 +605,15 @@ export function DeliveriesScreen() {
             aria-label="Поиск в списке доставок"
           />
         </label>
+        <button
+          type="button"
+          onClick={() => setMobileFiltersOpen(true)}
+          className="flex w-full min-h-[44px] items-center justify-between gap-2 border border-app-fg/15 bg-app-bg px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-fg/30 md:hidden"
+        >
+          <span>Фильтры</span>
+          <ChevronDown className="h-4 w-4 shrink-0 text-app-fg/50" strokeWidth={2} aria-hidden />
+        </button>
+        <div className="hidden gap-2 md:grid md:grid-cols-2 lg:grid-cols-12 lg:items-stretch">
         <select
           value={contractorFilter}
           onChange={(e) => setContractorFilter(e.target.value)}
@@ -498,24 +688,162 @@ export function DeliveriesScreen() {
             </div>
           )}
         </div>
+        </div>
       </div>
 
+      {mobileFiltersOpen ? (
+        <div
+          className="fixed inset-0 z-40 flex flex-col bg-app-bg md:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Фильтры"
+        >
+          <div className="flex items-center justify-between border-b border-app-fg/10 px-4 py-3">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-app-fg">Фильтры</h2>
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen(false)}
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center text-app-fg/60 transition hover:text-app-fg"
+              aria-label="Закрыть"
+            >
+              <X className="h-5 w-5" strokeWidth={1.5} />
+            </button>
+          </div>
+          <div className="flex flex-1 flex-col gap-2 overflow-y-auto p-4">
+            <select
+              value={contractorFilter}
+              onChange={(e) => setContractorFilter(e.target.value)}
+              aria-label="Фильтр по контрагенту"
+              className={`min-h-[42px] w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg outline-none ring-app-accent/35 focus:ring-2 ${selectNativeChevronPad}`}
+            >
+              <option value="all">Все контрагенты</option>
+              {contractors.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {(c.contactPerson?.trim() || c.name).toUpperCase()} · {c.name}
+                </option>
+              ))}
+            </select>
+            {isAdmin ? (
+              <select
+                value={employeeFilter}
+                onChange={(e) => setEmployeeFilter(e.target.value)}
+                aria-label="Фильтр по сотруднику"
+                className={`min-h-[42px] w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg outline-none ring-app-accent/35 focus:ring-2 ${selectNativeChevronPad}`}
+              >
+                <option value="all">Все сотрудники</option>
+                {employees.map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {abbreviateFio(e.fullName)}
+                  </option>
+                ))}
+              </select>
+            ) : null}
+            <select
+              value={statusFilter}
+              onChange={(e) =>
+                setStatusFilter(
+                  e.target.value === "all" ? "all" : (e.target.value as DeliveryStatus),
+                )
+              }
+              aria-label="Фильтр по статусу"
+              className={`min-h-[42px] w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg outline-none ring-app-accent/35 focus:ring-2 ${selectNativeChevronPad}`}
+            >
+              <option value="all">Все статусы</option>
+              {STATUS_ORDER.map((status) => (
+                <option key={status} value={status}>
+                  {DELIVERY_STATUS_LABELS[status]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="border-t border-app-fg/10 p-4 pb-safe">
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen(false)}
+              className="w-full min-h-[48px] bg-app-accent text-xs font-semibold uppercase tracking-wide text-app-fg transition hover:brightness-125"
+            >
+              Применить
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      <FilterChips chips={filterChips} />
+
+      {selectedIds.size > 0 ? (
+        <div className="flex flex-wrap items-center gap-2 border border-app-fg/15 bg-app-fg/[0.03] px-3 py-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-app-fg/70">
+            Выбрано: {selectedIds.size}
+          </span>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setBulkStatusOpen((o) => !o)}
+              className="border border-app-fg/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-fg/35"
+            >
+              Изменить статус
+            </button>
+            {bulkStatusOpen ? (
+              <ul className="absolute left-0 top-full z-20 mt-1 min-w-[10rem] border border-app-fg/15 bg-app-bg py-1 shadow-lg">
+                {STATUS_ORDER.map((s) => (
+                  <li key={s}>
+                    <button
+                      type="button"
+                      className="w-full px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 hover:bg-app-fg/[0.06]"
+                      onClick={() => handleBulkStatus(s)}
+                    >
+                      {DELIVERY_STATUS_LABELS[s]}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={handleExportSelected}
+            className="border border-app-fg/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-fg/35"
+          >
+            Экспорт CSV
+          </button>
+        </div>
+      ) : null}
+
       {deliveries.length === 0 ? (
-        <p className="border border-dashed border-app-fg/15 px-4 py-8 text-sm text-app-fg/55">
-          Доставок пока нет.
-        </p>
+        <div className="flex flex-col items-start gap-4 border border-dashed border-app-fg/15 px-4 py-8">
+          <p className="text-sm text-app-fg/55">Доставок пока нет.</p>
+          {isAdmin ? (
+            <button
+              type="button"
+              onClick={() => setIsAddOpen(true)}
+              className={primaryActionButtonClass}
+            >
+              <Plus className="h-4 w-4" strokeWidth={1.5} />
+              Создать первую доставку
+            </button>
+          ) : (
+            <p className="text-xs text-app-fg/45">Попросите администратора создать доставку.</p>
+          )}
+        </div>
       ) : filteredDeliveries.length === 0 ? (
         <p className="border border-dashed border-app-fg/15 px-4 py-8 text-sm text-app-fg/55">
           Нет строк по текущему фильтру. Измените поиск, контрагента или статус.
         </p>
       ) : (
-        <div className="relative">
-          <div className="overflow-x-auto bg-app-bg">
+        <HorizontalScrollTable
+          scrollProps={{
+            onMouseEnter: () => setTableHovered(true),
+            onMouseLeave: () => setTableHovered(false),
+          }}
+        >
           <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-xs text-app-fg">
             <thead>
               <tr
                 className={`text-[10px] font-semibold uppercase tracking-wide text-app-fg/50 ${tableHeadRowBorderClass}`}
               >
+                {showBulkColumn ? (
+                  <th className="w-8 px-1 py-2.5 align-middle" aria-label="Выбор" />
+                ) : null}
                 <SortableTh
                   columnKey="status"
                   sortKey={sortKey}
@@ -574,138 +902,126 @@ export function DeliveriesScreen() {
               </tr>
             </thead>
             <tbody>
-              {sortedDeliveries.map((delivery) => {
-                const contractor = contractors.find((c) => c.id === delivery.contractorId);
-                const assignee = delivery.assignedEmployeeId
-                  ? byEmployee.get(delivery.assignedEmployeeId)
-                  : undefined;
-                return (
-                  <tr
-                    key={delivery.id}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      window.location.href = `/deliveries/${delivery.id}`;
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        window.location.href = `/deliveries/${delivery.id}`;
-                      }
-                    }}
-                    className={`cursor-pointer transition hover:bg-app-fg/[0.04] ${tableBodyRowBorderClass}`}
-                  >
-                    <td className="px-4 py-2.5 align-middle">
-                      <span
-                        className={`inline-flex px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusClass(delivery.status)}`}
-                      >
-                        {DELIVERY_STATUS_LABELS[delivery.status]}
-                      </span>
-                    </td>
-                    <td className="px-4 py-2.5 align-middle font-medium text-app-fg/85">
-                      {delivery.orderNumber?.trim() || "—"}
-                    </td>
-                    <td className="px-4 py-2.5 align-middle font-medium text-app-fg">
-                      {delivery.trackNumber}
-                    </td>
-                    <td className="max-w-[220px] truncate px-4 py-2.5 align-middle text-app-fg/80">
-                      {contractor?.contactPerson?.trim() || contractor?.name || "—"}
-                    </td>
-                    <td className="max-w-[160px] truncate px-4 py-2.5 align-middle text-app-fg/75">
-                      {assignee ? abbreviateFio(assignee.fullName) : "—"}
-                    </td>
-                    <td className="px-4 py-2.5 text-right align-middle tabular-nums text-app-fg/80">
-                      {delivery.items?.length ?? delivery.itemIds?.length ?? 0}
-                    </td>
-                  </tr>
-                );
-              })}
+              {deliveriesByMonth.map(([ym, rows]) => (
+                <MonthDeliveryGroup
+                  key={ym}
+                  ym={ym}
+                  rows={rows}
+                  contractors={contractors}
+                  byEmployee={byEmployee}
+                  onOpen={openDeliveryRow}
+                  onStatusChange={updateDeliveryStatus}
+                  isAdmin={isAdmin}
+                  highlightId={highlightId}
+                  showBulkColumn={showBulkColumn}
+                  selectedIds={selectedIds}
+                  onToggleSelected={toggleSelected}
+                />
+              ))}
             </tbody>
           </table>
-          </div>
-          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-app-bg to-transparent" aria-hidden="true" />
-        </div>
+        </HorizontalScrollTable>
       )}
 
-      {isAddOpen && isAdmin && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4">
-          <div className="w-full max-w-3xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <h2 className="text-base font-semibold uppercase tracking-[0.1em] text-app-fg">
-                Добавить трек
-              </h2>
+      {isAdmin ? (
+        <button
+          type="button"
+          onClick={() => setIsAddOpen(true)}
+          className="fixed bottom-[4.5rem] right-4 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-app-accent text-app-fg shadow-lg transition hover:brightness-125 md:hidden"
+          aria-label="Добавить трек"
+        >
+          <Plus className="h-6 w-6" strokeWidth={1.5} />
+        </button>
+      ) : null}
+
+      <SlideOver
+        open={isAddOpen && isAdmin}
+        onClose={closeAddModal}
+        title="Добавить трек"
+        widthClass="sm:max-w-lg"
+        footer={
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={closeAddModal}
+              className="inline-flex flex-1 items-center justify-center border border-app-fg/15 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/40"
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              form="add-delivery-form"
+              className={`${primaryActionButtonClass} flex-1`}
+            >
+              Создать
+            </button>
+          </div>
+        }
+      >
+        {isAddOpen && isAdmin ? (
+          <form id="add-delivery-form" onSubmit={handleAddTrack} className="space-y-4">
+            <div>
+              <p className="mb-2 text-xs uppercase tracking-wider text-app-fg/55">Контрагент</p>
               <button
                 type="button"
-                onClick={() => {
-                  setIsAddOpen(false);
-                  resetForm();
-                }}
-                className="border border-app-fg/15 p-1.5 text-app-fg/70 transition hover:border-app-fg/40"
-                aria-label="Закрыть"
+                onClick={() => setIsContractorPickerOpen(true)}
+                className="w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-left text-sm text-app-fg outline-none ring-app-accent/35 transition hover:border-app-fg/40"
               >
-                <X className="h-4 w-4" strokeWidth={1.5} />
+                {contractorId
+                  ? (() => {
+                      const selected = contractors.find((c) => c.id === contractorId);
+                      if (!selected) return "Выбрать контрагента";
+                      return `${(selected.contactPerson?.trim() || selected.name).toUpperCase()} · ${selected.name}`;
+                    })()
+                  : "Выбрать контрагента"}
               </button>
             </div>
 
-            <form onSubmit={handleAddTrack} className="space-y-4">
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-wider text-app-fg/55">Контрагент</p>
-                <button
-                  type="button"
-                  onClick={() => setIsContractorPickerOpen(true)}
-                  className="w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-left text-sm text-app-fg outline-none ring-app-accent/35 transition hover:border-app-fg/40"
-                >
-                  {contractorId
-                    ? (() => {
-                        const selected = contractors.find((c) => c.id === contractorId);
-                        if (!selected) return "Выбрать контрагента";
-                        return `${(selected.contactPerson?.trim() || selected.name).toUpperCase()} · ${selected.name}`;
-                      })()
-                    : "Выбрать контрагента"}
-                </button>
-              </div>
+            <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+              Трек-номер
+              <input
+                value={trackNumber}
+                onChange={(e) => setTrackNumber(e.target.value)}
+                required
+                className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+              />
+            </label>
 
-              <label className="block text-xs uppercase tracking-wider text-app-fg/55">
-                Заказ
-                <input
-                  value={orderNumber}
-                  onChange={(e) => setOrderNumber(e.target.value)}
-                  className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                />
-              </label>
+            <details className="border border-app-fg/10">
+              <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg/70 [&::-webkit-details-marker]:hidden">
+                ▸ Дополнительно
+              </summary>
+              <div className="space-y-4 border-t border-app-fg/10 px-3 py-3">
+                <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                  Заказ
+                  <input
+                    value={orderNumber}
+                    onChange={(e) => setOrderNumber(e.target.value)}
+                    className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                  />
+                </label>
 
-              <label className="block text-xs uppercase tracking-wider text-app-fg/55">
-                Трек-номер
-                <input
-                  value={trackNumber}
-                  onChange={(e) => setTrackNumber(e.target.value)}
-                  required
-                  className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                />
-              </label>
-
-              <div>
-                <p className="mb-2 text-xs uppercase tracking-wider text-app-fg/55">
-                  Вещи в этой доставке
-                </p>
-                {!contractorId ? (
-                  <p className="border border-dashed border-app-fg/15 px-3 py-4 text-sm text-app-fg/55">
-                    Сначала выберите контрагента.
+                <div>
+                  <p className="mb-2 text-xs uppercase tracking-wider text-app-fg/55">
+                    Вещи в этой доставке
                   </p>
-                ) : (
-                  <div className="space-y-4">
-                    <button
-                      type="button"
-                      onClick={() => setIsItemPickerOpen(true)}
-                      className="inline-flex w-full items-center justify-center gap-2 border border-app-fg/15 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg/85 transition hover:border-app-fg/45"
-                    >
-                      <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
-                      Добавить вещь
-                    </button>
-                    {selectedItems.length > 0 ? (
-                      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-6">
-                        {selectedItems.map((item) => {
-                          return (
+                  {!contractorId ? (
+                    <p className="border border-dashed border-app-fg/15 px-3 py-4 text-sm text-app-fg/55">
+                      Сначала выберите контрагента.
+                    </p>
+                  ) : (
+                    <div className="space-y-4">
+                      <button
+                        type="button"
+                        onClick={() => setIsItemPickerOpen(true)}
+                        className="inline-flex w-full items-center justify-center gap-2 border border-app-fg/15 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg/85 transition hover:border-app-fg/45"
+                      >
+                        <Plus className="h-3.5 w-3.5" strokeWidth={1.5} />
+                        Добавить вещь
+                      </button>
+                      {selectedItems.length > 0 ? (
+                        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                          {selectedItems.map((item) => (
                             <article
                               key={`${item.productId}-${item.size}`}
                               className="overflow-hidden border border-app-fg/15 bg-app-bg"
@@ -740,27 +1056,19 @@ export function DeliveriesScreen() {
                                 </div>
                               </div>
                             </article>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-app-fg/55">Вещи пока не выбраны.</p>
-                    )}
-                  </div>
-                )}
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-xs text-app-fg/55">Вещи пока не выбраны.</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-
-              <button
-                type="submit"
-                className={`${primaryActionButtonClass} w-full`}
-              >
-                <Plus className="h-4 w-4" strokeWidth={1.5} />
-                Добавить трек
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
+            </details>
+          </form>
+        ) : null}
+      </SlideOver>
 
       {isItemPickerOpen && isAddOpen && (
         <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/75 px-4">
@@ -923,6 +1231,153 @@ export function DeliveriesScreen() {
           </div>
         </div>
       )}
+
+      <SlideOver
+        open={Boolean(selectedId)}
+        onClose={closeDetail}
+        widthClass="sm:max-w-xl"
+      >
+        {selectedId ? (
+          <DeliveryDetailScreen
+            deliveryId={selectedId}
+            variant="drawer"
+            onClose={closeDetail}
+          />
+        ) : null}
+      </SlideOver>
     </div>
+  );
+}
+
+function monthLabelRu(ym: string): string {
+  if (ym === "—" || !/^\d{4}-\d{2}$/.test(ym)) return ym;
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y!, m! - 1, 1);
+  return d.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+}
+
+function MonthDeliveryGroup({
+  ym,
+  rows,
+  contractors,
+  byEmployee,
+  onOpen,
+  onStatusChange,
+  isAdmin,
+  highlightId,
+  showBulkColumn,
+  selectedIds,
+  onToggleSelected,
+}: {
+  ym: string;
+  rows: Delivery[];
+  contractors: { id: string; name: string; contactPerson?: string }[];
+  byEmployee: Map<string, { fullName: string }>;
+  onOpen: (id: string) => void;
+  onStatusChange: (id: string, status: DeliveryStatus) => void;
+  isAdmin: boolean;
+  highlightId: string | null;
+  showBulkColumn: boolean;
+  selectedIds: Set<string>;
+  onToggleSelected: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(true);
+  const colSpan = showBulkColumn ? 7 : 6;
+
+  return (
+    <>
+      <tr
+        className="cursor-pointer bg-app-fg/[0.04] transition hover:bg-app-fg/[0.06]"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <td colSpan={colSpan} className="px-4 py-2">
+          <span className="inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-app-fg/60">
+            <ChevronDown
+              className={`h-3.5 w-3.5 transition ${open ? "rotate-180" : ""}`}
+              strokeWidth={2}
+            />
+            {monthLabelRu(ym)} · {rows.length}
+          </span>
+        </td>
+      </tr>
+      {open
+        ? rows.map((delivery) => {
+        const contractor = contractors.find((c) => c.id === delivery.contractorId);
+        const assignee = delivery.assignedEmployeeId
+          ? byEmployee.get(delivery.assignedEmployeeId)
+          : undefined;
+        const isSelected = selectedIds.has(delivery.id);
+        const isHighlighted = highlightId === delivery.id;
+        return (
+          <tr
+            key={delivery.id}
+            role="button"
+            tabIndex={0}
+            onClick={() => onOpen(delivery.id)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onOpen(delivery.id);
+              }
+            }}
+            className={`cursor-pointer transition hover:bg-app-fg/[0.04] ${tableBodyRowBorderClass} ${
+              isHighlighted ? "bg-app-accent/10" : ""
+            } ${isSelected ? "bg-app-fg/[0.06]" : ""}`}
+          >
+            {showBulkColumn ? (
+              <td
+                className="w-8 px-1 py-2.5 align-middle"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <input
+                  type="checkbox"
+                  checked={isSelected}
+                  onChange={() => onToggleSelected(delivery.id)}
+                  aria-label={`Выбрать ${delivery.trackNumber}`}
+                  className="h-3.5 w-3.5 accent-app-accent"
+                />
+              </td>
+            ) : null}
+            <td className="px-4 py-2.5 align-middle" onClick={(e) => e.stopPropagation()}>
+              {isAdmin ? (
+                <StatusBadgeDropdown
+                  value={delivery.status}
+                  options={STATUS_ORDER.map((s) => ({
+                    value: s,
+                    label: DELIVERY_STATUS_LABELS[s],
+                  }))}
+                  badgeClass={statusClass(delivery.status)}
+                  onChange={(status) =>
+                    onStatusChange(delivery.id, status as DeliveryStatus)
+                  }
+                />
+              ) : (
+                <span
+                  className={`inline-flex px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusClass(delivery.status)}`}
+                >
+                  {DELIVERY_STATUS_LABELS[delivery.status]}
+                </span>
+              )}
+            </td>
+            <td className="px-4 py-2.5 align-middle font-medium text-app-fg/85">
+              {delivery.orderNumber?.trim() || "—"}
+            </td>
+            <td className="px-4 py-2.5 align-middle font-medium text-app-fg">
+              {delivery.trackNumber}
+            </td>
+            <td className="max-w-[220px] truncate px-4 py-2.5 align-middle text-app-fg/80">
+              {contractor?.contactPerson?.trim() || contractor?.name || "—"}
+            </td>
+            <td className="max-w-[160px] truncate px-4 py-2.5 align-middle text-app-fg/75">
+              {assignee ? abbreviateFio(assignee.fullName) : "—"}
+            </td>
+            <td className="px-4 py-2.5 text-right align-middle tabular-nums text-app-fg/80">
+              {delivery.items?.length ?? delivery.itemIds?.length ?? 0}
+            </td>
+          </tr>
+        );
+        })
+        : null}
+    </>
   );
 }

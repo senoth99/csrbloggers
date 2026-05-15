@@ -35,9 +35,20 @@ import {
   normalizeIntegrationPublicLink,
 } from "@/lib/integration-link";
 import {
+  coercePanelStoredShape,
+  parseLegacyPromocodeSnapshots,
+} from "@/lib/panel-stored-shape";
+import {
+  loadPromocodeSnapshots,
+  migratePromocodeSnapshotsFromPanel,
+  recordPromocodeSnapshotsLocal,
+  type PromocodeSnapshotRow,
+} from "@/lib/promocode-snapshots-local";
+import {
   deliveryNotifyTaskKey,
   integrationReachTaskKey,
   integrationReleaseVerifyTaskKey,
+  staleCompletedTaskKeys,
 } from "@/lib/panel-tasks";
 
 const STORAGE_KEY = "casher-panel-data-v1";
@@ -51,10 +62,22 @@ interface StoredShape {
   contractorLinks: ContractorLink[];
   deliveries: Delivery[];
   employees: Employee[];
-  /** Ключи вида delivery-notify:id / integration-reach:id / integration-release-verify:id */
-  completedTaskKeys: string[];
-  /** Снапшоты total-активаций промокодов (для расчёта дельт по месяцам) */
-  promocodeSnapshots?: Array<{ codeKey: string; t: number; activations: number }>;
+}
+
+const PANEL_DATA_BC = "casher-panel-data";
+
+/** JSON для panel-data / localStorage — без per-user completedTaskKeys (хранятся в User). */
+function panelSnapshotPayload(data: StoredShape): StoredShape {
+  return {
+    contractors: data.contractors,
+    integrations: data.integrations,
+    socialOptions: data.socialOptions,
+    nicheOptions: data.nicheOptions,
+    contractorItems: data.contractorItems,
+    contractorLinks: data.contractorLinks,
+    deliveries: data.deliveries,
+    employees: data.employees,
+  };
 }
 
 function slugify(raw: string): string {
@@ -66,76 +89,12 @@ function slugify(raw: string): string {
   return s || `net-${Date.now()}`;
 }
 
-/** Разбор произвольного JSON (localStorage или ответ сервера) в черновик StoredShape. */
-function coercePanelStoredShape(parsed: unknown): StoredShape | null {
-  const p = parsed as StoredShape;
-  if (!p || typeof p !== "object") return null;
-  return {
-    contractors: Array.isArray(p.contractors) ? p.contractors : [],
-    integrations: Array.isArray(p.integrations) ? p.integrations : [],
-    socialOptions: Array.isArray(p.socialOptions) ? p.socialOptions : [],
-    nicheOptions: Array.isArray((p as { nicheOptions?: unknown }).nicheOptions)
-      ? ((p as { nicheOptions: NicheOption[] }).nicheOptions ?? []).filter(
-          (row): row is NicheOption =>
-            !!row &&
-            typeof row === "object" &&
-            typeof (row as NicheOption).id === "string" &&
-            typeof (row as NicheOption).label === "string",
-        )
-      : [],
-    contractorItems: Array.isArray((p as { contractorItems?: unknown }).contractorItems)
-      ? ((p as { contractorItems: ContractorItem[] }).contractorItems ?? [])
-      : [],
-    contractorLinks: Array.isArray((p as { contractorLinks?: unknown }).contractorLinks)
-      ? ((p as { contractorLinks: ContractorLink[] }).contractorLinks ?? []).filter(
-          (row): row is ContractorLink =>
-            !!row &&
-            typeof row === "object" &&
-            typeof (row as ContractorLink).id === "string" &&
-            typeof (row as ContractorLink).contractorId === "string" &&
-            typeof (row as ContractorLink).title === "string" &&
-            typeof (row as ContractorLink).url === "string",
-        )
-      : [],
-    deliveries: Array.isArray((p as { deliveries?: unknown }).deliveries)
-      ? ((p as { deliveries: Delivery[] }).deliveries ?? [])
-      : [],
-    employees: Array.isArray((p as { employees?: unknown }).employees)
-      ? ((p as { employees: Employee[] }).employees ?? [])
-      : [],
-    completedTaskKeys: Array.isArray((p as { completedTaskKeys?: unknown }).completedTaskKeys)
-      ? ((p as { completedTaskKeys: string[] }).completedTaskKeys ?? []).filter(
-          (x): x is string => typeof x === "string",
-        )
-      : [],
-    promocodeSnapshots: Array.isArray(
-      (p as { promocodeSnapshots?: unknown }).promocodeSnapshots,
-    )
-      ? ((p as {
-          promocodeSnapshots: Array<{ codeKey?: unknown; t?: unknown; activations?: unknown }>;
-        }).promocodeSnapshots ?? [])
-          .map((row) => {
-            const codeKey =
-              typeof row.codeKey === "string" ? row.codeKey.trim().toLowerCase() : "";
-            const t = typeof row.t === "number" && Number.isFinite(row.t) ? row.t : NaN;
-            const activations =
-              typeof row.activations === "number" && Number.isFinite(row.activations)
-                ? row.activations
-                : NaN;
-            if (!codeKey || !Number.isFinite(t) || !Number.isFinite(activations)) return null;
-            return { codeKey, t, activations };
-          })
-          .filter(Boolean) as Array<{ codeKey: string; t: number; activations: number }>
-      : [],
-  };
-}
-
 function loadStored(): StoredShape | null {
   if (typeof window === "undefined") return null;
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return coercePanelStoredShape(JSON.parse(raw));
+    return coercePanelStoredShape(JSON.parse(raw)) as StoredShape | null;
   } catch {
     return null;
   }
@@ -143,7 +102,7 @@ function loadStored(): StoredShape | null {
 
 function saveStored(data: StoredShape) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(panelSnapshotPayload(data)));
 }
 
 function normalizeSocial(opts: SocialOption[]): SocialOption[] {
@@ -354,12 +313,13 @@ function emptyStoredShape(): StoredShape {
     contractorLinks: [],
     deliveries: [],
     employees: [],
-    completedTaskKeys: [],
-    promocodeSnapshots: [],
   };
 }
 
-function normalizeIncomingPanelData(loaded: StoredShape): StoredShape {
+function normalizeIncomingPanelData(
+  loaded: StoredShape,
+  legacyPromo?: PromocodeSnapshotRow[],
+): StoredShape {
   const social = normalizeSocial(loaded.socialOptions);
   const nicheOptions = normalizeNicheOptions(loaded.nicheOptions ?? []);
   const employeesRaw = Array.isArray(loaded.employees) ? loaded.employees : [];
@@ -388,9 +348,6 @@ function normalizeIncomingPanelData(loaded: StoredShape): StoredShape {
     }
     return next;
   });
-  const completedTaskKeys = Array.isArray(loaded.completedTaskKeys)
-    ? loaded.completedTaskKeys.filter((x): x is string => typeof x === "string")
-    : [];
   const result: StoredShape = {
     contractors,
     integrations,
@@ -400,9 +357,10 @@ function normalizeIncomingPanelData(loaded: StoredShape): StoredShape {
     contractorLinks: loaded.contractorLinks ?? [],
     deliveries,
     employees,
-    completedTaskKeys,
-    promocodeSnapshots: loaded.promocodeSnapshots ?? [],
   };
+  if (legacyPromo?.length && typeof window !== "undefined") {
+    migratePromocodeSnapshotsFromPanel(legacyPromo);
+  }
   if (strippedLegacyDemo && typeof window !== "undefined") {
     saveStored(result);
   }
@@ -419,7 +377,8 @@ function getInitialState(): StoredShape {
     saveStored(empty);
     return empty;
   }
-  return normalizeIncomingPanelData(loaded);
+  const legacyPromo = parseLegacyPromocodeSnapshots(loaded);
+  return normalizeIncomingPanelData(loaded, legacyPromo);
 }
 
 interface PanelDataContextValue {
@@ -445,7 +404,7 @@ interface PanelDataContextValue {
       note?: string;
       /** Именованные ссылки (как в карточке → «Ссылки»), создаются вместе с контрагентом */
       initialLinks?: { title: string; url: string }[];
-    }) => void;
+    }) => string | null;
   updateContractor: (
     id: string,
     updates: Partial<
@@ -502,6 +461,14 @@ interface PanelDataContextValue {
     >,
   ) => void;
   removeIntegration: (id: string) => void;
+  restoreIntegration: (row: Integration, completedTaskKeysToRestore: string[]) => void;
+  restoreContractorDeletion: (snapshot: {
+    contractor: Contractor;
+    integrations: Integration[];
+    contractorItems: ContractorItem[];
+    contractorLinks: ContractorLink[];
+    deliveries: Delivery[];
+  }) => void;
   addSocialOption: (label: string) => void;
   updateSocialOption: (id: string, label: string) => void;
   removeSocialOption: (id: string) => void;
@@ -522,7 +489,7 @@ interface PanelDataContextValue {
     updates: Partial<Pick<ContractorLink, "title" | "url">>,
   ) => void;
   removeContractorLink: (id: string) => void;
-  addDelivery: (input: AddDeliveryInput) => void;
+  addDelivery: (input: AddDeliveryInput) => string | null;
   updateDeliveryStatus: (id: string, status: DeliveryStatus) => void;
   updateDelivery: (
     id: string,
@@ -539,10 +506,26 @@ interface PanelDataContextValue {
   completedTaskKeys: string[];
   /** Отметить задачу выполненной (доставка, проверка выхода интеграции). */
   completeTaskKey: (key: string) => void;
+  taskKeysError: string | null;
+  clearTaskKeysError: () => void;
   saveError: string | null;
   clearSaveError: () => void;
-  /** Снапшоты total-активаций промокодов (для расчёта дельт по месяцам) */
-  promocodeSnapshots: Array<{ codeKey: string; t: number; activations: number }>;
+  /** PUT отклонён из‑за более новой ревизии на сервере */
+  saveConflictPending: boolean;
+  /** Вернуть локальные правки поверх серверного снапшота и сохранить */
+  applyLocalSaveConflict: () => void;
+  /** Принять серверную версию и отбросить локальные правки из конфликта */
+  dismissSaveConflict: () => void;
+  /** Немедленно отправить текущий снапшот (сброс debounce) */
+  retrySave: () => void;
+  /** Ожидает debounce или активный PUT */
+  savePending: boolean;
+  /** На сервере / в другой вкладке есть более новая версия */
+  remoteUpdatePending: boolean;
+  applyRemoteUpdate: () => void;
+  dismissRemoteUpdate: () => void;
+  /** Снапшоты total-активаций промокодов (localStorage, не panel-data) */
+  promocodeSnapshots: PromocodeSnapshotRow[];
   /** Записать снапшоты total-активаций промокодов */
   recordPromocodeSnapshot: (
     items: Array<{ codeKey: string; activations: number }>,
@@ -566,10 +549,9 @@ const EMPTY_STORED: StoredShape = {
   contractorLinks: [],
   deliveries: [],
   employees: [],
-  completedTaskKeys: [],
-  promocodeSnapshots: [],
 };
 
+/** All authenticated roles receive the full snapshot; see GET /api/panel-data. */
 export function PanelDataProvider({ children }: { children: ReactNode }) {
   const { role, currentLogin, isAuthenticated, hydrated } = useAuth();
   const isAdmin = role === "admin" || role === "superadmin";
@@ -580,68 +562,264 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
   const dataRef = useRef(data);
   dataRef.current = data;
 
+  const completeTaskKeyRef = useRef<(key: string) => void>(() => {});
+  const uncompleteTaskKeyRef = useRef<(key: string) => void>(() => {});
+
   const [userTaskKeys, setUserTaskKeys] = useState<string[]>([]);
   const userTaskKeysRef = useRef<string[]>([]);
   userTaskKeysRef.current = userTaskKeys;
 
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [taskKeysError, setTaskKeysError] = useState<string | null>(null);
+  const [savePending, setSavePending] = useState(false);
+  const [saveConflictPending, setSaveConflictPending] = useState(false);
+  const [promocodeSnapshots, setPromocodeSnapshots] = useState<PromocodeSnapshotRow[]>([]);
+  const [remoteUpdatePending, setRemoteUpdatePending] = useState(false);
+  const remotePayloadRef = useRef<{ data: unknown; revision: number } | null>(null);
+  const conflictLocalRef = useRef<StoredShape | null>(null);
+  const saveConflictPendingRef = useRef(false);
+  saveConflictPendingRef.current = saveConflictPending;
 
   const serverRevisionRef = useRef<number | null>(null);
   const pendingSaveRef = useRef(false);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const syncSavePending = useCallback(() => {
+    setSavePending(flushTimerRef.current !== null || pendingSaveRef.current);
+  }, []);
+
   const applyServerPayload = useCallback((bodyData: unknown, revision: number) => {
-    const coerced = coercePanelStoredShape(bodyData) ?? EMPTY_STORED;
-    const normalized = normalizeIncomingPanelData(coerced);
+    const legacyPromo = parseLegacyPromocodeSnapshots(bodyData);
+    const coerced = (coercePanelStoredShape(bodyData) as StoredShape | null) ?? EMPTY_STORED;
+    const normalized = normalizeIncomingPanelData(coerced, legacyPromo);
     setData(normalized);
     saveStored(normalized);
     serverRevisionRef.current = revision;
+    if (legacyPromo.length > 0) {
+      setPromocodeSnapshots(migratePromocodeSnapshotsFromPanel(legacyPromo));
+    }
   }, []);
+
+  const applyRemoteUpdate = useCallback(() => {
+    const pending = remotePayloadRef.current;
+    if (!pending) return;
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    conflictLocalRef.current = null;
+    setSaveConflictPending(false);
+    setSaveError(null);
+    syncSavePending();
+    applyServerPayload(pending.data, pending.revision);
+    remotePayloadRef.current = null;
+    setRemoteUpdatePending(false);
+  }, [applyServerPayload, syncSavePending]);
+
+  const dismissRemoteUpdate = useCallback(() => {
+    if (saveConflictPendingRef.current) return;
+    remotePayloadRef.current = null;
+    setRemoteUpdatePending(false);
+  }, []);
+
+  const clearSaveConflict = useCallback(() => {
+    conflictLocalRef.current = null;
+    setSaveConflictPending(false);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setPromocodeSnapshots(loadPromocodeSnapshots());
+  }, []);
+
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") return;
+    const bc = new BroadcastChannel(PANEL_DATA_BC);
+    bc.onmessage = () => setRemoteUpdatePending(true);
+    return () => bc.close();
+  }, []);
+
+  const pruneStaleUserTaskKeysRef = useRef<() => void>(() => {});
+
+  const reloadUserTaskKeys = useCallback(async (): Promise<string[]> => {
+    const res = await fetch("/api/tasks/completed", { credentials: "include" });
+    if (!res.ok) {
+      throw new Error(`task keys reload failed: ${res.status}`);
+    }
+    const j = (await res.json()) as { keys?: unknown };
+    const keys = Array.isArray(j.keys)
+      ? j.keys.filter((k): k is string => typeof k === "string")
+      : [];
+    setUserTaskKeys(keys);
+    setTaskKeysError(null);
+    queueMicrotask(() => pruneStaleUserTaskKeysRef.current());
+    return keys;
+  }, []);
+
+  const patchUserTaskKeys = useCallback(
+    async (ops: { add?: string[]; remove?: string[] }): Promise<boolean> => {
+      const add = (ops.add ?? []).map((k) => k.trim()).filter(Boolean);
+      const remove = (ops.remove ?? []).map((k) => k.trim()).filter(Boolean);
+      if (add.length === 0 && remove.length === 0) return true;
+
+      const prevKeys = userTaskKeysRef.current;
+      const removeSet = new Set(remove);
+      let next = prevKeys.filter((k) => !removeSet.has(k));
+      for (const k of add) {
+        if (!next.includes(k)) next.push(k);
+      }
+      setUserTaskKeys(next);
+
+      try {
+        const res = await fetch("/api/tasks/completed", {
+          method: "PATCH",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ add, remove }),
+        });
+        if (!res.ok) {
+          setTaskKeysError("Не удалось сохранить отметку задачи. Попробуйте снова.");
+          setUserTaskKeys(prevKeys);
+          await reloadUserTaskKeys();
+          return false;
+        }
+        const j = (await res.json()) as { keys?: unknown };
+        if (Array.isArray(j.keys)) {
+          setUserTaskKeys(j.keys.filter((k): k is string => typeof k === "string"));
+        }
+        setTaskKeysError(null);
+        return true;
+      } catch {
+        setTaskKeysError("Не удалось сохранить отметку задачи. Проверьте соединение.");
+        setUserTaskKeys(prevKeys);
+        await reloadUserTaskKeys();
+        return false;
+      }
+    },
+    [reloadUserTaskKeys],
+  );
+
+  const pruneStaleUserTaskKeys = useCallback(() => {
+    const keys = userTaskKeysRef.current;
+    if (keys.length === 0) return;
+    const { deliveries, integrations } = dataRef.current;
+    if (deliveries.length === 0 && integrations.length === 0) return;
+    const stale = staleCompletedTaskKeys(keys, deliveries, integrations);
+    if (stale.length === 0) return;
+    void patchUserTaskKeys({ remove: stale });
+  }, [patchUserTaskKeys]);
+  pruneStaleUserTaskKeysRef.current = pruneStaleUserTaskKeys;
 
   const pushSnapshotToServer = useCallback(
     async (snapshot: StoredShape): Promise<boolean> => {
       if (!isAuthenticated) return false;
       pendingSaveRef.current = true;
+      syncSavePending();
+      const payload = panelSnapshotPayload(snapshot);
+      const SAVE_ATTEMPTS = 3;
+      const backoffMs = (attempt: number) => 400 * 2 ** attempt;
       try {
-        const base = serverRevisionRef.current ?? 0;
-        const res = await fetch("/api/panel-data", {
-          method: "PUT",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Panel-Base-Revision": String(base),
-          },
-          body: JSON.stringify(snapshot),
-        });
-        if (res.status === 200) {
-          const j = (await res.json()) as { revision?: unknown };
-          if (typeof j.revision === "number") {
-            serverRevisionRef.current = j.revision;
+        for (let attempt = 0; attempt < SAVE_ATTEMPTS; attempt++) {
+          try {
+            const base = serverRevisionRef.current ?? 0;
+            const res = await fetch("/api/panel-data", {
+              method: "PUT",
+              credentials: "include",
+              headers: {
+                "Content-Type": "application/json",
+                "X-Panel-Base-Revision": String(base),
+              },
+              body: JSON.stringify(payload),
+            });
+            if (res.status === 200) {
+              const j = (await res.json()) as { revision?: unknown };
+              if (typeof j.revision === "number") {
+                serverRevisionRef.current = j.revision;
+              }
+              setSaveError(null);
+              clearSaveConflict();
+              if (typeof BroadcastChannel !== "undefined") {
+                new BroadcastChannel(PANEL_DATA_BC).postMessage({ saved: true });
+              }
+              return true;
+            }
+            if (res.status === 409) {
+              const j = (await res.json()) as { revision?: unknown; data?: unknown };
+              const r = typeof j.revision === "number" ? j.revision : 0;
+              if (flushTimerRef.current) {
+                clearTimeout(flushTimerRef.current);
+                flushTimerRef.current = null;
+              }
+              conflictLocalRef.current = dataRef.current;
+              setSaveConflictPending(true);
+              try {
+                await reloadUserTaskKeys();
+              } catch (e) {
+                console.error("[panel-data] reload task keys after 409", e);
+                setTaskKeysError(
+                  "Не удалось синхронизировать выполненные задачи после конфликта.",
+                );
+                setSaveError(
+                  "Конфликт сохранения: не удалось синхронизировать задачи. Обновите страницу и повторите.",
+                );
+                return false;
+              }
+              applyServerPayload(j.data ?? null, r);
+              setSaveError(
+                "Конфликт сохранения: на сервере более новая версия. Примите серверные данные или восстановите свои правки.",
+              );
+              return false;
+            }
+            if (res.status === 401 || res.status === 403) {
+              console.warn("[panel-data] отказ при сохранении (сессия)");
+              return false;
+            }
+            if (res.status >= 500 && attempt < SAVE_ATTEMPTS - 1) {
+              await new Promise((r) => setTimeout(r, backoffMs(attempt)));
+              continue;
+            }
+            setSaveError("Не удалось сохранить данные. Проверьте соединение.");
+            return false;
+          } catch (e) {
+            if (attempt < SAVE_ATTEMPTS - 1) {
+              await new Promise((r) => setTimeout(r, backoffMs(attempt)));
+              continue;
+            }
+            console.error("[panel-data] сохранение не удалось", e);
+            setSaveError("Не удалось сохранить данные. Проверьте соединение.");
+            return false;
           }
-          setSaveError(null);
-          return true;
         }
-        if (res.status === 409) {
-          const j = (await res.json()) as { revision?: unknown; data?: unknown };
-          const r = typeof j.revision === "number" ? j.revision : 0;
-          applyServerPayload(j.data ?? null, r);
-          return false;
-        }
-        if (res.status === 401 || res.status === 403) {
-          console.warn("[panel-data] отказ при сохранении (сессия)");
-        }
-        setSaveError("Не удалось сохранить данные. Проверьте соединение.");
-        return false;
-      } catch (e) {
-        console.error("[panel-data] сохранение не удалось", e);
-        setSaveError("Не удалось сохранить данные. Проверьте соединение.");
         return false;
       } finally {
         pendingSaveRef.current = false;
+        syncSavePending();
       }
     },
-    [applyServerPayload, isAuthenticated],
+    [applyServerPayload, clearSaveConflict, isAuthenticated, reloadUserTaskKeys, syncSavePending],
   );
+
+  const applyLocalSaveConflict = useCallback(() => {
+    const local = conflictLocalRef.current;
+    if (!local) return;
+    clearSaveConflict();
+    setSaveError(null);
+    remotePayloadRef.current = null;
+    setRemoteUpdatePending(false);
+    setData(local);
+    saveStored(local);
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    syncSavePending();
+    void pushSnapshotToServer(local);
+  }, [clearSaveConflict, pushSnapshotToServer, syncSavePending]);
+
+  const dismissSaveConflict = useCallback(() => {
+    clearSaveConflict();
+    setSaveError(null);
+  }, [clearSaveConflict]);
 
   const scheduleServerSave = useCallback(
     (next: StoredShape) => {
@@ -649,11 +827,24 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       if (flushTimerRef.current) clearTimeout(flushTimerRef.current);
       flushTimerRef.current = setTimeout(() => {
         flushTimerRef.current = null;
+        syncSavePending();
         void pushSnapshotToServer(next);
       }, 650);
+      syncSavePending();
     },
-    [isAuthenticated, pushSnapshotToServer],
+    [isAuthenticated, pushSnapshotToServer, syncSavePending],
   );
+
+  const retrySave = useCallback(() => {
+    if (!isAuthenticated) return;
+    if (saveConflictPendingRef.current) return;
+    if (flushTimerRef.current) {
+      clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    setSaveError(null);
+    void pushSnapshotToServer(dataRef.current);
+  }, [isAuthenticated, pushSnapshotToServer]);
 
   useEffect(() => {
     try {
@@ -703,12 +894,30 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!hydrated || !isAuthenticated) return;
     void fetch("/api/tasks/completed", { credentials: "include" })
-      .then((r) => r.ok ? r.json() : null)
+      .then((r) => (r.ok ? r.json() : null))
       .then((j: { keys?: string[] } | null) => {
-        if (Array.isArray(j?.keys)) setUserTaskKeys(j!.keys.filter((k): k is string => typeof k === "string"));
+        if (Array.isArray(j?.keys)) {
+          setUserTaskKeys(j.keys.filter((k): k is string => typeof k === "string"));
+          queueMicrotask(() => pruneStaleUserTaskKeysRef.current());
+        }
       })
       .catch(() => {});
   }, [hydrated, isAuthenticated]);
+
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated) return;
+    pruneStaleUserTaskKeys();
+  }, [hydrated, isAuthenticated, data.deliveries, data.integrations, pruneStaleUserTaskKeys]);
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (flushTimerRef.current == null && !pendingSaveRef.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, []);
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated) return;
@@ -724,7 +933,15 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           const localRev = serverRevisionRef.current ?? 0;
           if (revision <= localRev) return;
           if (body.data == null) return;
-          applyServerPayload(body.data, revision);
+          remotePayloadRef.current = { data: body.data, revision };
+          setRemoteUpdatePending(true);
+          if (flushTimerRef.current != null || pendingSaveRef.current) {
+            conflictLocalRef.current = dataRef.current;
+            setSaveConflictPending(true);
+            setSaveError(
+              "На сервере есть более новая версия. Примите серверные данные или сохраните свои правки — редактирование заблокировано.",
+            );
+          }
         } catch {
           /* ignore */
         }
@@ -735,6 +952,12 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
 
   const patch = useCallback(
     (fn: (prev: StoredShape) => StoredShape) => {
+      if (saveConflictPendingRef.current) {
+        setSaveError(
+          "Сначала разрешите конфликт сохранения: примите серверные данные или восстановите свои правки.",
+        );
+        return;
+      }
       setData((prev) => {
         const next = fn(prev);
         saveStored(next);
@@ -758,11 +981,13 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       rating?: number;
       note?: string;
       initialLinks?: { title: string; url: string }[];
-    }) => {
+    }): string | null => {
       const n = input.name.trim();
-      if (!n || !isAdminRef.current) return;
+      if (!n || !isAdminRef.current) return null;
       const rawRating =
         typeof input.rating === "number" ? input.rating : Number(input.rating ?? 0);
+      const newId = createPanelId();
+      let applied = false;
       patch((prev) => {
         const nid = input.nicheId?.trim();
         const nicheId =
@@ -770,7 +995,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         const sc = input.sizeCategory;
         const sizeCategory =
           sc === "micro" || sc === "middle" || sc === "large" ? sc : undefined;
-        const newId = createPanelId();
+        applied = true;
         const now = new Date().toISOString();
         const linkRows: ContractorLink[] = [];
         for (const row of input.initialLinks ?? []) {
@@ -807,6 +1032,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           contractorLinks: [...prev.contractorLinks, ...linkRows],
         };
       });
+      return applied ? newId : null;
     },
     [isAdmin, patch],
   );
@@ -888,16 +1114,31 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
   const removeContractor = useCallback(
     (id: string) => {
       if (!isAdminRef.current) return;
-      patch((prev) => ({
-        ...prev,
-        contractors: prev.contractors.filter((c) => c.id !== id),
-        integrations: prev.integrations.filter((row) => row.contractorId !== id),
-        contractorItems: prev.contractorItems.filter((row) => row.contractorId !== id),
-        contractorLinks: prev.contractorLinks.filter((row) => row.contractorId !== id),
-        deliveries: prev.deliveries.filter((row) => row.contractorId !== id),
+      const prev = dataRef.current;
+      const keysToRemove = new Set<string>();
+      for (const d of prev.deliveries.filter((row) => row.contractorId === id)) {
+        keysToRemove.add(deliveryNotifyTaskKey(d.id));
+      }
+      for (const i of prev.integrations.filter((row) => row.contractorId === id)) {
+        keysToRemove.add(integrationReachTaskKey(i.id));
+        keysToRemove.add(integrationReleaseVerifyTaskKey(i.id));
+      }
+      patch((p) => ({
+        ...p,
+        contractors: p.contractors.filter((c) => c.id !== id),
+        integrations: p.integrations.filter((row) => row.contractorId !== id),
+        contractorItems: p.contractorItems.filter((row) => row.contractorId !== id),
+        contractorLinks: p.contractorLinks.filter((row) => row.contractorId !== id),
+        deliveries: p.deliveries.filter((row) => row.contractorId !== id),
       }));
+      if (keysToRemove.size > 0) {
+        const toRemove = userTaskKeysRef.current.filter((k) => keysToRemove.has(k));
+        if (toRemove.length > 0) {
+          void patchUserTaskKeys({ remove: toRemove });
+        }
+      }
     },
-    [isAdmin, patch],
+    [isAdmin, patch, patchUserTaskKeys],
   );
 
   const addEmployee = useCallback(
@@ -1127,6 +1368,9 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         >
       >,
     ) => {
+      if (!isAdminRef.current) return;
+      const autoCompleteKeys: string[] = [];
+      const autoUncompleteKeys: string[] = [];
       patch((prev) => {
         const row = prev.integrations.find((r) => r.id === id);
         if (!row) return prev;
@@ -1208,30 +1452,35 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        let completedTaskKeys = prev.completedTaskKeys;
-        if (typeof next.reach === "number" && !Number.isNaN(next.reach)) {
-          const rk = integrationReachTaskKey(id);
-          if (!completedTaskKeys.includes(rk)) {
-            completedTaskKeys = [...completedTaskKeys, rk];
-          }
+        if (typeof next.reach === "number" && !Number.isNaN(next.reach) && next.reach > 0) {
+          autoCompleteKeys.push(integrationReachTaskKey(id));
+        } else if ("reach" in updates) {
+          autoUncompleteKeys.push(integrationReachTaskKey(id));
         }
         if (next.status === "returned" || next.status === "exchange") {
-          const vk = integrationReleaseVerifyTaskKey(id);
-          if (!completedTaskKeys.includes(vk)) {
-            completedTaskKeys = [...completedTaskKeys, vk];
-          }
+          autoCompleteKeys.push(integrationReleaseVerifyTaskKey(id));
+        } else if (
+          updates.status !== undefined &&
+          (row.status === "returned" || row.status === "exchange")
+        ) {
+          autoUncompleteKeys.push(integrationReleaseVerifyTaskKey(id));
         }
 
         return {
           ...prev,
-          completedTaskKeys,
           integrations: prev.integrations.map((r) =>
             r.id === id ? next : r,
           ),
         };
       });
+      for (const key of autoCompleteKeys) {
+        completeTaskKeyRef.current(key);
+      }
+      for (const key of autoUncompleteKeys) {
+        uncompleteTaskKeyRef.current(key);
+      }
     },
-    [patch],
+    [isAdmin, patch],
   );
 
   const removeIntegration = useCallback(
@@ -1239,11 +1488,75 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       if (!isAdminRef.current) return;
       const rk = integrationReachTaskKey(id);
       const vk = integrationReleaseVerifyTaskKey(id);
+      const drop = new Set([rk, vk]);
       patch((prev) => ({
         ...prev,
         integrations: prev.integrations.filter((r) => r.id !== id),
-        completedTaskKeys: prev.completedTaskKeys.filter((k) => k !== rk && k !== vk),
       }));
+      const toRemove = userTaskKeysRef.current.filter((k) => drop.has(k));
+      if (toRemove.length > 0) {
+        void patchUserTaskKeys({ remove: toRemove });
+      }
+    },
+    [isAdmin, patch, patchUserTaskKeys],
+  );
+
+  const restoreIntegration = useCallback(
+    (row: Integration, completedTaskKeysToRestore: string[]) => {
+      if (!isAdminRef.current) return;
+      patch((prev) => {
+        if (prev.integrations.some((r) => r.id === row.id)) return prev;
+        return {
+          ...prev,
+          integrations: [...prev.integrations, row],
+        };
+      });
+      const extraKeys = completedTaskKeysToRestore.filter(
+        (k) => !userTaskKeysRef.current.includes(k),
+      );
+      if (extraKeys.length > 0) {
+        void patchUserTaskKeys({ add: extraKeys });
+      }
+    },
+    [isAdmin, patch, patchUserTaskKeys],
+  );
+
+  const restoreContractorDeletion = useCallback(
+    (snapshot: {
+      contractor: Contractor;
+      integrations: Integration[];
+      contractorItems: ContractorItem[];
+      contractorLinks: ContractorLink[];
+      deliveries: Delivery[];
+    }) => {
+      if (!isAdminRef.current) return;
+      patch((prev) => {
+        if (prev.contractors.some((c) => c.id === snapshot.contractor.id)) return prev;
+        const existingIntegrationIds = new Set(prev.integrations.map((r) => r.id));
+        const existingItemIds = new Set(prev.contractorItems.map((r) => r.id));
+        const existingLinkIds = new Set(prev.contractorLinks.map((r) => r.id));
+        const existingDeliveryIds = new Set(prev.deliveries.map((r) => r.id));
+        return {
+          ...prev,
+          contractors: [...prev.contractors, snapshot.contractor],
+          integrations: [
+            ...prev.integrations,
+            ...snapshot.integrations.filter((r) => !existingIntegrationIds.has(r.id)),
+          ],
+          contractorItems: [
+            ...prev.contractorItems,
+            ...snapshot.contractorItems.filter((r) => !existingItemIds.has(r.id)),
+          ],
+          contractorLinks: [
+            ...prev.contractorLinks,
+            ...snapshot.contractorLinks.filter((r) => !existingLinkIds.has(r.id)),
+          ],
+          deliveries: [
+            ...prev.deliveries,
+            ...snapshot.deliveries.filter((r) => !existingDeliveryIds.has(r.id)),
+          ],
+        };
+      });
     },
     [isAdmin, patch],
   );
@@ -1490,11 +1803,11 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
 
   const addDelivery = useCallback(
     (input: AddDeliveryInput) => {
-      if (!isAdminRef.current) return;
+      if (!isAdminRef.current) return null;
       const contractorId = input.contractorId.trim();
       const orderNumber = input.orderNumber?.trim() ?? "";
       const trackNumber = input.trackNumber.trim();
-      if (!contractorId || !trackNumber) return;
+      if (!contractorId || !trackNumber) return null;
       const items = input.items
         .map((item) => ({
           id: createPanelId(),
@@ -1504,6 +1817,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           imageUrl: item.imageUrl?.trim() ?? "",
         }))
         .filter((item) => item.productId && item.productName && item.size);
+      const newId = createPanelId();
       patch((prev) => {
         let assign = input.assignedEmployeeId?.trim();
         if (!assign || !prev.employees.some((em) => em.id === assign)) {
@@ -1514,7 +1828,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           deliveries: [
             ...prev.deliveries,
             {
-              id: createPanelId(),
+              id: newId,
               contractorId,
               orderNumber,
               trackNumber,
@@ -1528,12 +1842,14 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           ],
         };
       });
+      return newId;
     },
     [isAdmin, patch],
   );
 
   const updateDeliveryStatus = useCallback(
     (id: string, status: DeliveryStatus) => {
+      if (!isAdminRef.current) return;
       patch((prev) => {
         const delivery = prev.deliveries.find((d) => d.id === id);
         if (!delivery) {
@@ -1683,76 +1999,86 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       patch((prev) => ({
         ...prev,
         deliveries: prev.deliveries.filter((d) => d.id !== id),
-        completedTaskKeys: prev.completedTaskKeys.filter((k) => k !== dk),
       }));
+      if (userTaskKeysRef.current.includes(dk)) {
+        void patchUserTaskKeys({ remove: [dk] });
+      }
     },
-    [isAdmin, patch],
+    [isAdmin, patch, patchUserTaskKeys],
   );
 
-  const completeTaskKey = useCallback(
-    (key: string) => {
-      const k = key.trim();
-      if (!k) return;
-      setUserTaskKeys((prev) => {
-        if (prev.includes(k)) return prev;
-        const next = [...prev, k];
-        void fetch("/api/tasks/completed", {
-          method: "PUT",
-          credentials: "include",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ keys: Array.from(new Set([...userTaskKeysRef.current, k])) }),
-        }).catch(() => {});
-        return next;
+  const completeTaskKey = useCallback((key: string) => {
+    const k = key.trim();
+    if (!k) return;
+    const prevKeys = userTaskKeysRef.current;
+    if (prevKeys.includes(k)) return;
+    setUserTaskKeys([...prevKeys, k]);
+    void fetch("/api/tasks/completed", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ add: [k] }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          setUserTaskKeys(prevKeys);
+          setTaskKeysError("Не удалось отметить задачу выполненной.");
+          return;
+        }
+        const j = (await res.json()) as { keys?: unknown };
+        if (Array.isArray(j.keys)) {
+          setUserTaskKeys(j.keys.filter((x): x is string => typeof x === "string"));
+        }
+        setTaskKeysError(null);
+      })
+      .catch(() => {
+        setUserTaskKeys(prevKeys);
+        setTaskKeysError("Не удалось отметить задачу выполненной. Проверьте соединение.");
       });
-    },
-    [],
-  );
+  }, []);
+
+  const uncompleteTaskKey = useCallback((key: string) => {
+    const k = key.trim();
+    if (!k) return;
+    const prevKeys = userTaskKeysRef.current;
+    if (!prevKeys.includes(k)) return;
+    setUserTaskKeys(prevKeys.filter((x) => x !== k));
+    void fetch("/api/tasks/completed", {
+      method: "PATCH",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ remove: [k] }),
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          setUserTaskKeys(prevKeys);
+          setTaskKeysError("Не удалось снять отметку задачи.");
+          return;
+        }
+        const j = (await res.json()) as { keys?: unknown };
+        if (Array.isArray(j.keys)) {
+          setUserTaskKeys(j.keys.filter((x): x is string => typeof x === "string"));
+        }
+        setTaskKeysError(null);
+      })
+      .catch(() => {
+        setUserTaskKeys(prevKeys);
+        setTaskKeysError("Не удалось снять отметку задачи. Проверьте соединение.");
+      });
+  }, []);
+
+  completeTaskKeyRef.current = completeTaskKey;
+  uncompleteTaskKeyRef.current = uncompleteTaskKey;
 
   const clearSaveError = useCallback(() => setSaveError(null), []);
+  const clearTaskKeysError = useCallback(() => setTaskKeysError(null), []);
 
   const recordPromocodeSnapshot = useCallback(
     (items: Array<{ codeKey: string; activations: number }>, fetchedAt: number) => {
-      const t = Number.isFinite(fetchedAt) ? fetchedAt : Date.now();
-      const normalized = items
-        .map((it) => {
-          const codeKey = (it.codeKey ?? "").trim().toLowerCase();
-          const activations = Number.isFinite(it.activations) ? it.activations : 0;
-          if (!codeKey) return null;
-          return { codeKey, t, activations };
-        })
-        .filter(Boolean) as Array<{ codeKey: string; t: number; activations: number }>;
-
-      if (normalized.length === 0) return;
-
-      patch((prev) => {
-        const prevRows = prev.promocodeSnapshots ?? [];
-        const next = [...prevRows];
-
-        // Ограничим рост: храним максимум ~1200 записей (примерно 25 дней по 2 снапшота/час для 1 кода,
-        // или меньше при нескольких кодах). Этого достаточно для "месяц".
-        const HARD_LIMIT = 1200;
-
-        for (const row of normalized) {
-          const last = next.length > 0 ? next[next.length - 1] : undefined;
-          // Если подряд прилетает ровно то же значение по тому же коду и времени ~ то же — пропускаем.
-          if (
-            last &&
-            last.codeKey === row.codeKey &&
-            last.activations === row.activations &&
-            Math.abs(last.t - row.t) < 60_000
-          ) {
-            continue;
-          }
-          next.push(row);
-        }
-
-        const trimmed =
-          next.length > HARD_LIMIT ? next.slice(next.length - HARD_LIMIT) : next;
-
-        return { ...prev, promocodeSnapshots: trimmed };
-      });
+      const next = recordPromocodeSnapshotsLocal(items, fetchedAt);
+      setPromocodeSnapshots(next);
     },
-    [patch],
+    [],
   );
 
   const value = useMemo(
@@ -1776,6 +2102,8 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       addIntegration,
       updateIntegration,
       removeIntegration,
+      restoreIntegration,
+      restoreContractorDeletion,
       addSocialOption,
       updateSocialOption,
       removeSocialOption,
@@ -1793,11 +2121,21 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       addDeliveryItem,
       removeDeliveryItem,
       removeDelivery,
-      completedTaskKeys: Array.from(new Set([...data.completedTaskKeys, ...userTaskKeys])),
+      completedTaskKeys: userTaskKeys,
       completeTaskKey,
+      taskKeysError,
+      clearTaskKeysError,
       saveError,
       clearSaveError,
-      promocodeSnapshots: data.promocodeSnapshots ?? [],
+      saveConflictPending,
+      applyLocalSaveConflict,
+      dismissSaveConflict,
+      retrySave,
+      savePending,
+      remoteUpdatePending,
+      applyRemoteUpdate,
+      dismissRemoteUpdate,
+      promocodeSnapshots,
       recordPromocodeSnapshot,
       addIntegrationPosition,
       removeIntegrationPosition,
@@ -1811,11 +2149,20 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       data.contractorLinks,
       data.deliveries,
       data.employees,
-      data.completedTaskKeys,
-      data.promocodeSnapshots,
+      promocodeSnapshots,
+      remoteUpdatePending,
+      applyRemoteUpdate,
+      dismissRemoteUpdate,
       userTaskKeys,
+      taskKeysError,
+      clearTaskKeysError,
       saveError,
       clearSaveError,
+      saveConflictPending,
+      applyLocalSaveConflict,
+      dismissSaveConflict,
+      retrySave,
+      savePending,
       isAdmin,
       addContractor,
       updateContractor,
@@ -1827,6 +2174,8 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       addIntegration,
       updateIntegration,
       removeIntegration,
+      restoreIntegration,
+      restoreContractorDeletion,
       addSocialOption,
       updateSocialOption,
       removeSocialOption,

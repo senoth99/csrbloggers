@@ -77,8 +77,8 @@ export function DashboardIntegrationsScreen() {
 
   return (
     <div className="space-y-10 pb-10">
-      <header className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+      <header className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-1">
           <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-app-fg/40">
             Дашборд
           </p>

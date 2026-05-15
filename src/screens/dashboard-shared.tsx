@@ -36,9 +36,22 @@ export const selectNativeChevronPad = "pr-9";
 export const dashboardSectionTitleClass =
   "text-[10px] font-semibold uppercase tracking-[0.22em] text-app-fg/45";
 
-/** Главный заголовок страницы дашборда (Обзор, Интеграции, …) */
-export const dashboardPageTitleClass =
-  "mt-2 text-2xl font-semibold uppercase tracking-[0.12em] text-app-fg md:text-[1.65rem]";
+/** Главный заголовок страницы CRM (Интеграции, Контрагенты, Задачи, …) */
+export const crmPageTitleClass =
+  "text-xl font-bold uppercase tracking-[0.12em] text-app-fg md:text-2xl";
+
+/** Строка шапки: заголовок слева, действия справа (высота как у primary-кнопки) */
+export const crmPageHeaderRowClass =
+  "flex min-h-[42px] flex-col gap-3 sm:flex-row sm:items-center sm:justify-between";
+
+/** То же, что {@link crmPageTitleClass} — для страниц дашборда */
+export const dashboardPageTitleClass = crmPageTitleClass;
+
+/** Вертикальный ритм страницы «Обзор» */
+export const dashboardPageStackClass = "space-y-4";
+
+/** Оболочка блока дашборда (единые отступы) */
+export const dashboardSectionShellClass = `p-6 sm:p-8 ${dashboardPanelClass}`;
 
 /** Период под заголовком «Общий отчёт» */
 export const dashboardReportPeriodClass =
@@ -152,14 +165,17 @@ export function DistributionBars({
 export function DashboardChartSection({
   title,
   children,
+  action,
 }: {
   title: string;
   children: ReactNode;
+  action?: ReactNode;
 }) {
   return (
-    <section className={`p-6 sm:p-8 ${dashboardPanelClass}`}>
-      <div className="mb-6 sm:mb-7">
+    <section className={dashboardSectionShellClass}>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 sm:mb-7">
         <h2 className={dashboardSectionTitleClass}>{title}</h2>
+        {action ? <div className="shrink-0">{action}</div> : null}
       </div>
       {children}
     </section>

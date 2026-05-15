@@ -88,13 +88,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const data = (await res.json()) as
         | { authenticated: false }
-        | { authenticated: true; me: PanelUserPublic; users: PanelUserPublic[] };
+        | { authenticated: true; me: PanelUserPublic; users?: PanelUserPublic[] };
       if (!data.authenticated) {
         setUsers([]);
         setCurrentLogin(null);
         return;
       }
-      setUsers(data.users.map(publicToPanelUser));
+      const meUser = publicToPanelUser(data.me);
+      setUsers(data.users?.length ? data.users.map(publicToPanelUser) : [meUser]);
       setCurrentLogin(normalizeUsername(data.me.login));
     } catch (e) {
       console.error("[auth] refresh failed", e);

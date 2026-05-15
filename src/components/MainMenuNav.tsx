@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { isActive } from "@/lib/nav-utils";
 
 const navItems = [
   { href: "/integrations", label: "Интеграции" },
@@ -9,11 +10,8 @@ const navItems = [
   { href: "/dashboard", label: "Дашборд" },
   { href: "/deliveries", label: "Доставки" },
   { href: "/tasks", label: "Задачи" },
+  { href: "/reports", label: "Отчёты" },
 ] as const;
-
-function isActive(pathname: string, href: string) {
-  return pathname === href || pathname.startsWith(`${href}/`);
-}
 
 function linkClass(active: boolean) {
   return [

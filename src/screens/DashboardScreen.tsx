@@ -1,52 +1,76 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, Download } from "lucide-react";
 import { usePanelData } from "@/context/PanelDataContext";
 import { usePromocodesCtx } from "@/context/PromocodesContext";
 import {
   DELIVERY_STATUS_LABELS,
   INTEGRATION_STATUS_LABELS,
-  type DeliveryStatus,
   type IntegrationStatus,
 } from "@/types/panel-data";
 import {
-  agreementsCreatedInMonth,
+  aggregateCpmForMonth,
   countBy,
-  currentYearMonth,
   deliveriesCreatedInMonth,
   formatYearMonthString,
   integrationReachByCalendarDayInMonth,
   integrationsCreatedInMonth,
   integrationsPublishedInMonth,
   monthOverMonthTrend,
+  monthOverMonthTrendCpm,
   shiftYearMonth,
+  sumIntegrationBudget,
   sumIntegrationReach,
   sumPromoActivations,
 } from "@/lib/dashboard-metrics";
+import { formatRuCpm, formatRuMoney } from "@/lib/format-ru";
 import { ReachByDayBarChart } from "@/components/ReachByDayBarChart";
 import { downloadUtf8Csv, rowsToCsv } from "@/lib/csv-export";
 import { DashboardGeneralReportTable } from "@/components/DashboardGeneralReportTable";
+import { DashboardTopBloggers } from "@/components/dashboard/DashboardTopBloggers";
+import { DashboardPromocodesPanel } from "@/components/dashboard/DashboardPromocodesPanel";
+import { DashboardIntegrationsMonthTable } from "@/components/dashboard/DashboardIntegrationsMonthTable";
+import { DashboardDeliveriesSummary } from "@/components/dashboard/DashboardDeliveriesSummary";
+import { DashboardEmployeesSummary } from "@/components/dashboard/DashboardEmployeesSummary";
+import { useDashboardMonth } from "@/hooks/useDashboardMonth";
 import {
   DashboardChartSection,
   DistributionBars,
   StatCard,
-  dashboardPageTitleClass,
-  listDivideClass,
+  crmPageHeaderRowClass,
+  crmPageTitleClass,
+  dashboardMonthInputClass,
+  dashboardMonthNavButtonClass,
+  dashboardMonthPickerRowClass,
+  dashboardPageStackClass,
+  primaryActionButtonClass,
 } from "@/screens/dashboard-shared";
 
 const nfKpi = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 
 export function DashboardScreen() {
-  const { contractors, integrations, deliveries, socialOptions, recordPromocodeSnapshot, promocodeSnapshots } =
-    usePanelData();
-  const { items: promoItems, byCodeKey: promoByCodeKey, fetchedAt: promoFetchedAt } =
-    usePromocodesCtx();
+  const {
+    contractors,
+    integrations,
+    deliveries,
+    employees,
+    socialOptions,
+    recordPromocodeSnapshot,
+    promocodeSnapshots,
+  } = usePanelData();
+  const { items: promoItems, fetchedAt: promoFetchedAt } = usePromocodesCtx();
+  const { ym, setMonth, monthInputValue } = useDashboardMonth();
 
-  const ym = currentYearMonth();
-  const ymPrev = shiftYearMonth(ym, -1);
+  const ymPrev = useMemo(() => shiftYearMonth(ym, -1), [ym]);
 
-  // фиксируем снапшот total-активаций (для расчёта "за месяц")
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    if (!hash) return;
+    const el = document.getElementById(hash);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, []);
+
   useEffect(() => {
     if (!promoFetchedAt || promoItems.length === 0) return;
     recordPromocodeSnapshot(promoItems, promoFetchedAt);
@@ -54,7 +78,6 @@ export function DashboardScreen() {
 
   const monthKey = `${ym.year}-${String(ym.month).padStart(2, "0")}`;
   const promoDeltaByCodeKey = useMemo(() => {
-    // Берём только снапшоты текущего месяца и считаем last-first по каждому коду
     const start = new Date(`${monthKey}-01T00:00:00.000Z`).getTime();
     const end = shiftYearMonth(ym, 1);
     const endKey = `${end.year}-${String(end.month).padStart(2, "0")}`;
@@ -75,8 +98,7 @@ export function DashboardScreen() {
     const out = new Map<string, number>();
     for (const [k, l] of Array.from(last.entries())) {
       const f = first.get(k);
-      // Single snapshot this month: use 0 as baseline (no prior data for the month)
-      const base = (f && f.t !== l.t) ? f.activations : 0;
+      const base = f && f.t !== l.t ? f.activations : 0;
       const d = l.activations - base;
       if (Number.isFinite(d)) out.set(k, Math.max(0, d));
     }
@@ -94,60 +116,52 @@ export function DashboardScreen() {
     [integrations, ym],
   );
 
-  const deliveriesMonth = useMemo(
-    () => deliveriesCreatedInMonth(deliveries, ym),
-    [deliveries, ym],
+  const pubMonth = useMemo(
+    () => integrationsPublishedInMonth(integrations, ym),
+    [integrations, ym],
+  );
+  const pubMonthPrev = useMemo(
+    () => integrationsPublishedInMonth(integrations, ymPrev),
+    [integrations, ymPrev],
   );
 
   const kpi = useMemo(() => {
-    const pubMonth = integrationsPublishedInMonth(integrations, ym);
-    const pubMonthPrev = integrationsPublishedInMonth(integrations, ymPrev);
     const reach = sumIntegrationReach(pubMonth);
     const reachPrev = sumIntegrationReach(pubMonthPrev);
-    const promo = sumPromoActivations(pubMonth);
-    const promoPrev = sumPromoActivations(pubMonthPrev);
-    const agreements = agreementsCreatedInMonth(integrations, ym);
-    const agreementsPrev = agreementsCreatedInMonth(integrations, ymPrev);
+    const budget = sumIntegrationBudget(pubMonth);
+    const budgetPrev = sumIntegrationBudget(pubMonthPrev);
+    const cpm = aggregateCpmForMonth(pubMonth);
+    const cpmPrev = aggregateCpmForMonth(pubMonthPrev);
     return {
-      reach,
-      reachPrev,
       count: pubMonth.length,
       countPrev: pubMonthPrev.length,
-      agreements,
-      agreementsPrev,
-      promo,
-      promoPrev,
+      reach,
+      reachPrev,
+      budget,
+      budgetPrev,
+      cpm,
+      cpmPrev,
     };
-  }, [integrations, ym, ymPrev]);
+  }, [pubMonth, pubMonthPrev]);
 
   const reachByDay = useMemo(
-    () =>
-      integrationReachByCalendarDayInMonth(
-        integrations.filter((i) => i.status === "published"),
-        ym,
-      ),
-    [integrations, ym],
+    () => integrationReachByCalendarDayInMonth(pubMonth, ym),
+    [pubMonth, ym],
+  );
+
+  const manualPromoActivations = useMemo(
+    () => sumPromoActivations(pubMonth),
+    [pubMonth],
   );
 
   const intBarEntries = useMemo(() => {
     const raw = countBy(integrationsMonth.map((i) => i.status));
-    return (Object.keys(INTEGRATION_STATUS_LABELS) as IntegrationStatus[]).map(
-      (k) => ({
-        key: k,
-        label: INTEGRATION_STATUS_LABELS[k],
-        value: raw[k] ?? 0,
-      }),
-    );
-  }, [integrationsMonth]);
-
-  const delBarEntries = useMemo(() => {
-    const raw = countBy(deliveriesMonth.map((d) => d.status));
-    return (Object.keys(DELIVERY_STATUS_LABELS) as DeliveryStatus[]).map((k) => ({
+    return (Object.keys(INTEGRATION_STATUS_LABELS) as IntegrationStatus[]).map((k) => ({
       key: k,
-      label: DELIVERY_STATUS_LABELS[k],
+      label: INTEGRATION_STATUS_LABELS[k],
       value: raw[k] ?? 0,
     }));
-  }, [deliveriesMonth]);
+  }, [integrationsMonth]);
 
   const platformBars = useMemo(() => {
     const raw = countBy(integrationsMonth.map((i) => i.socialNetworkId));
@@ -160,35 +174,9 @@ export function DashboardScreen() {
       .sort((a, b) => b.value - a.value);
   }, [integrationsMonth, socialOptions]);
 
-  const promoPanelRows = useMemo(() => {
-    return contractors
-      .map((c) => {
-        const code = (c.promoCode ?? "").trim();
-        if (!code) return null;
-        const codeKey = code.toLowerCase();
-        return {
-          contractorId: c.id,
-          contractorName: c.name,
-          code,
-          activations: promoDeltaByCodeKey.get(codeKey),
-        };
-      })
-      .filter(Boolean)
-      .sort((a, b) => ((b!.activations ?? -1) as number) - ((a!.activations ?? -1) as number)) as Array<{
-      contractorId: string;
-      contractorName: string;
-      code: string;
-      activations: number | undefined;
-    }>;
-  }, [contractors, promoDeltaByCodeKey]);
-
-  const promoPanelTotal = useMemo(() => {
-    return promoPanelRows.reduce((acc, r) => acc + (r.activations ?? 0), 0);
-  }, [promoPanelRows]);
-
   function handleExportThisMonth() {
-    const month = currentYearMonth();
-    const intRows = integrationsCreatedInMonth(integrations, month).map((i) => [
+    const month = ym;
+    const intRows = integrationsPublishedInMonth(integrations, month).map((i) => [
       "интеграция",
       i.id,
       (i.title ?? "").replace(/\s+/g, " ").trim(),
@@ -202,18 +190,18 @@ export function DashboardScreen() {
       i.budget != null ? String(i.budget) : "",
     ]);
     const delRows = deliveriesCreatedInMonth(deliveries, month).map((d) => [
-      "доставка",
-      d.id,
-      d.trackNumber,
-      DELIVERY_STATUS_LABELS[d.status],
-      "",
-      d.createdAt ?? "",
-      contractorName.get(d.contractorId) ?? d.contractorId,
-      "",
-      "",
-      "",
-      "",
-    ]);
+        "доставка",
+        d.id,
+        d.trackNumber,
+        DELIVERY_STATUS_LABELS[d.status],
+        "",
+        d.createdAt ?? "",
+        contractorName.get(d.contractorId) ?? d.contractorId,
+        "",
+        "",
+        "",
+        "",
+      ]);
     const header = [
       "Тип записи",
       "ID",
@@ -228,117 +216,150 @@ export function DashboardScreen() {
       "Бюджет (₽)",
     ];
     const csv = rowsToCsv(header, [...intRows, ...delRows]);
-    downloadUtf8Csv(
-      `выгрузка-${formatYearMonthString(month)}.csv`,
-      csv,
-    );
+    downloadUtf8Csv(`выгрузка-${formatYearMonthString(month)}.csv`, csv);
   }
 
   return (
-    <div className="space-y-10 pb-10">
-      {contractors.length === 0 && integrations.length === 0 && (
-        <div className="border border-app-fg/15 rounded-md px-6 py-8">
-          <p className="font-bold mb-2">Добро пожаловать в панель</p>
-          <p className="text-app-fg/70 text-sm mb-5">
-            Начните с добавления контрагента (блогера), затем создайте первую интеграцию.
-          </p>
-          <div className="flex flex-wrap gap-3">
-            <a href="/contractors" className="border border-app-fg/20 px-4 py-1.5 text-sm hover:bg-app-fg/5 rounded">
-              → Контрагенты
-            </a>
-            <a href="/integrations" className="border border-app-fg/20 px-4 py-1.5 text-sm hover:bg-app-fg/5 rounded">
-              → Интеграции
-            </a>
+    <div className={`w-full min-w-0 max-w-full pb-10 ${dashboardPageStackClass}`}>
+      <div className={crmPageHeaderRowClass}>
+        <h1 className={crmPageTitleClass}>Обзор</h1>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-col gap-1">
+            <label
+              htmlFor="dashboard-month"
+              className="text-[10px] font-semibold uppercase tracking-wider text-app-fg/45"
+            >
+              Месяц
+            </label>
+            <div className={dashboardMonthPickerRowClass}>
+              <button
+                type="button"
+                aria-label="Предыдущий месяц"
+                onClick={() => setMonth(shiftYearMonth(ym, -1))}
+                className={dashboardMonthNavButtonClass}
+              >
+                <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+              <input
+                id="dashboard-month"
+                type="month"
+                value={monthInputValue}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  const parts = v.split("-").map(Number);
+                  if (parts.length === 2 && parts[0] && parts[1]) {
+                    setMonth({ year: parts[0], month: parts[1] });
+                  }
+                }}
+                className={dashboardMonthInputClass}
+              />
+              <button
+                type="button"
+                aria-label="Следующий месяц"
+                onClick={() => setMonth(shiftYearMonth(ym, 1))}
+                className={dashboardMonthNavButtonClass}
+              >
+                <ChevronRight className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            </div>
           </div>
+
+          <button
+            type="button"
+            onClick={handleExportThisMonth}
+            className={`${primaryActionButtonClass} w-full shrink-0 bg-app-accent/20 ring-1 ring-app-accent/30 hover:bg-app-accent/30 sm:w-auto`}
+          >
+            <Download className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            Выгрузка CSV
+          </button>
         </div>
-      )}
+      </div>
+
       <DashboardChartSection title="Ключевые показатели">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <p className="mb-4 text-xs leading-relaxed text-app-fg/50">
+          KPI ниже (интеграции, охваты, бюджет, CPM) — по{" "}
+          <span className="text-app-fg/70">дате выхода</span> (releaseDate). Блоки
+          «Создано в месяце» — по дате создания записи (createdAt). Δ промокодов
+          (Casher API) — из снапшотов в localStorage этого браузера.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <StatCard
-            label="Охваты (общие)"
-            value={nfKpi.format(kpi.reach)}
-            accent="accent"
-            trend={monthOverMonthTrend(kpi.reach, kpi.reachPrev)}
-          />
-          <StatCard
-            label="Количество интеграций"
+            label="Интеграции (выход в месяце)"
             value={kpi.count}
+            accent="accent"
             trend={monthOverMonthTrend(kpi.count, kpi.countPrev)}
           />
           <StatCard
-            label="Количество договорённостей"
-            value={nfKpi.format(kpi.agreements)}
-            trend={monthOverMonthTrend(kpi.agreements, kpi.agreementsPrev)}
+            label="Охваты"
+            value={nfKpi.format(kpi.reach)}
+            trend={monthOverMonthTrend(kpi.reach, kpi.reachPrev)}
           />
           <StatCard
-            label="Активаций промокодов (из интеграций)"
-            value={nfKpi.format(kpi.promo)}
-            trend={monthOverMonthTrend(kpi.promo, kpi.promoPrev)}
+            label="Бюджет"
+            value={kpi.budget > 0 ? `${formatRuMoney(kpi.budget)} ₽` : "—"}
+            trend={monthOverMonthTrend(kpi.budget, kpi.budgetPrev)}
+          />
+          <StatCard
+            label="CPM"
+            value={kpi.cpm != null ? `${formatRuCpm(kpi.cpm)} ₽` : "—"}
+            trend={monthOverMonthTrendCpm(kpi.cpm, kpi.cpmPrev)}
+            trendPolarity="inverse"
+          />
+          <StatCard
+            label="Активаций (ручной ввод)"
+            value={nfKpi.format(manualPromoActivations)}
+            hint="Сумма поля promoActivations на интеграциях с выходом в месяце. Не путать с блоком «Промокоды (Δ)» — там Casher API."
           />
         </div>
       </DashboardChartSection>
-
-      {promoPanelRows.length > 0 ? (
-        <DashboardChartSection title="Промокоды (Casher API)">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <p className="text-xs font-medium tabular-nums text-app-fg/70">
-              Всего активаций: {nfKpi.format(promoPanelTotal)}
-            </p>
-          </div>
-          <ul className={`rounded-sm border border-app-fg/10 ${listDivideClass}`}>
-            {promoPanelRows.map((r) => (
-              <li
-                key={`${r.contractorId}:${r.code}`}
-                className="flex items-center justify-between gap-4 px-4 py-3"
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-app-fg">
-                    {r.contractorName}
-                  </p>
-                  <p className="mt-0.5 text-xs text-app-fg/55">{r.code}</p>
-                </div>
-                <div className="shrink-0 text-right tabular-nums text-app-fg">
-                  {r.activations != null ? nfKpi.format(r.activations) : "—"}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </DashboardChartSection>
-      ) : null}
 
       <ReachByDayBarChart dailyReach={reachByDay} />
 
-      <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-app-fg/40">
-            Дашборд
-          </p>
-          <h1 className={dashboardPageTitleClass}>Обзор</h1>
-        </div>
-        <button
-          type="button"
-          onClick={handleExportThisMonth}
-          className="inline-flex w-full shrink-0 items-center justify-center gap-2 bg-app-accent/20 px-5 py-3.5 text-xs font-semibold uppercase tracking-[0.12em] text-app-fg ring-1 ring-app-accent/30 transition hover:bg-app-accent/30 sm:w-auto"
-        >
-          <Download className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-          Выгрузка CSV
-        </button>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <DashboardTopBloggers
+          ym={ym}
+          integrations={integrations}
+          contractorName={contractorName}
+        />
+        <DashboardPromocodesPanel
+          contractors={contractors}
+          promoDeltaByCodeKey={promoDeltaByCodeKey}
+        />
       </div>
+
+      <section id="integrations" className={`scroll-mt-6 ${dashboardPageStackClass}`}>
+        <DashboardIntegrationsMonthTable
+          ym={ym}
+          integrations={integrations}
+          socialOptions={socialOptions}
+          contractorName={contractorName}
+        />
+
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <DashboardChartSection title="Создано в месяце · статусы">
+            <DistributionBars entries={intBarEntries} />
+          </DashboardChartSection>
+          <DashboardChartSection title="Создано в месяце · площадки">
+            <DistributionBars entries={platformBars} />
+          </DashboardChartSection>
+        </div>
+      </section>
+
+      <DashboardDeliveriesSummary
+        ym={ym}
+        deliveries={deliveries}
+        contractors={contractors}
+      />
+
+      <DashboardEmployeesSummary
+        ym={ym}
+        employees={employees}
+        integrations={integrations}
+        deliveries={deliveries}
+      />
 
       <DashboardGeneralReportTable ym={ym} integrations={integrations} />
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <DashboardChartSection title="Интеграции · статусы">
-          <DistributionBars entries={intBarEntries} />
-        </DashboardChartSection>
-        <DashboardChartSection title="Доставки · статусы">
-          <DistributionBars entries={delBarEntries} />
-        </DashboardChartSection>
-      </div>
-
-      <DashboardChartSection title="Площадки">
-        <DistributionBars entries={platformBars} />
-      </DashboardChartSection>
     </div>
   );
 }

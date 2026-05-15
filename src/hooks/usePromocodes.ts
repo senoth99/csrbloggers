@@ -29,7 +29,10 @@ export function usePromocodes() {
     async function load() {
       setLoading(true);
       try {
-        const res = await fetch("/api/promocodes", { cache: "no-store" });
+        const res = await fetch("/api/promocodes", {
+          cache: "no-store",
+          credentials: "include",
+        });
         const json = (await res.json()) as PromocodeResponse;
         if (!alive) return;
         if (!res.ok) {

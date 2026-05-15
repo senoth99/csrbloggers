@@ -12,7 +12,11 @@ import {
   normalizeUsername,
   type UserRole,
 } from "@/context/AuthContext";
-import { tableBodyRowBorderClass, tableHeadRowBorderClass } from "@/screens/dashboard-shared";
+import {
+  crmPageTitleClass,
+  tableBodyRowBorderClass,
+  tableHeadRowBorderClass,
+} from "@/screens/dashboard-shared";
 import { usePanelData } from "@/context/PanelDataContext";
 
 type AdminUserSortKey = "username" | "role";
@@ -90,9 +94,7 @@ export function AdminScreen() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-xl font-bold uppercase tracking-[0.12em] text-app-fg md:text-2xl">
-          Админка
-        </h1>
+        <h1 className={crmPageTitleClass}>Админка</h1>
         <p className="mt-2 text-sm text-app-fg/55">
           Справочники и список учётных записей панели (логин и роль)
         </p>

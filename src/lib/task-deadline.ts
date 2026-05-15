@@ -12,8 +12,13 @@ export function addCalendarDaysLocal(base: Date, days: number): Date {
   return new Date(base.getFullYear(), base.getMonth(), base.getDate() + days);
 }
 
-/** Начало локального календарного дня события (по дате из ISO). */
+/** Начало локального календарного дня события (YYYY-MM-DD или ISO с временем). */
 export function startOfLocalDayFromIso(iso: string): Date {
+  const ymd = iso.trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    const local = parseYmdLocal(ymd);
+    if (local) return local;
+  }
   const t = new Date(iso);
   return new Date(t.getFullYear(), t.getMonth(), t.getDate());
 }

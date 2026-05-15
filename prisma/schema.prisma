@@ -25,3 +25,9 @@ model PanelSnapshot {
   revision  Int      @default(0)
   updatedAt DateTime @updatedAt
 }
+
+model LoginAttempt {
+  key       String   @id
+  count     Int      @default(1)
+  windowEnd DateTime
+}

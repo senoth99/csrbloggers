@@ -11,6 +11,7 @@ import {
 } from "@/types/panel-data";
 import { EmployeeAvatar } from "@/components/EmployeeAvatar";
 import { abbreviateFio } from "@/lib/employee-utils";
+import { ConfirmDeleteButton } from "@/components/ui";
 import { selectNativeChevronPad } from "@/screens/dashboard-shared";
 
 const PRODUCTS_API_URL = "/api/casher-products";
@@ -30,8 +31,17 @@ function buildImageUrl(raw?: string): string {
   return `${API_ORIGIN}${raw.startsWith("/") ? raw : `/${raw}`}`;
 }
 
-export function DeliveryDetailScreen({ deliveryId }: { deliveryId: string }) {
+export function DeliveryDetailScreen({
+  deliveryId,
+  variant = "page",
+  onClose,
+}: {
+  deliveryId: string;
+  variant?: "page" | "drawer";
+  onClose?: () => void;
+}) {
   const router = useRouter();
+  const isDrawer = variant === "drawer";
   const {
     deliveries,
     contractors,
@@ -138,14 +148,16 @@ export function DeliveryDetailScreen({ deliveryId }: { deliveryId: string }) {
 
   if (!delivery) {
     return (
-      <div className="space-y-4">
-        <Link
-          href="/deliveries"
-          className="inline-flex items-center gap-2 text-sm text-app-fg/55 transition"
-        >
-          <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-          Назад к доставкам
-        </Link>
+      <div className={`space-y-4 ${isDrawer ? "px-4 py-4" : ""}`}>
+        {!isDrawer ? (
+          <Link
+            href="/deliveries"
+            className="inline-flex items-center gap-2 text-sm text-app-fg/55 transition"
+          >
+            <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
+            Назад к доставкам
+          </Link>
+        ) : null}
         <p className="text-sm text-app-fg/55">Доставка не найдена.</p>
       </div>
     );
@@ -176,7 +188,7 @@ export function DeliveryDetailScreen({ deliveryId }: { deliveryId: string }) {
         });
         return;
       }
-      if (payload.status) {
+      if (payload.status && isAdmin) {
         updateDeliveryStatus(d.id, payload.status);
       }
       if (payload.message?.trim()) {
@@ -194,9 +206,9 @@ export function DeliveryDetailScreen({ deliveryId }: { deliveryId: string }) {
 
   function handleRemove() {
     if (!isAdmin) return;
-    if (!window.confirm("Удалить эту доставку?")) return;
     removeDelivery(d.id);
-    router.replace("/deliveries");
+    if (onClose) onClose();
+    else router.replace("/deliveries");
   }
 
   function openEditMode() {
@@ -234,18 +246,40 @@ export function DeliveryDetailScreen({ deliveryId }: { deliveryId: string }) {
   }
 
   return (
-    <div className="space-y-5">
-      <Link
-        href="/deliveries"
-        className="inline-flex items-center gap-2 text-sm text-app-fg/55 transition"
-      >
-        <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
-        Назад к доставкам
-      </Link>
+    <div className={`space-y-5 ${isDrawer ? "px-4 py-4 sm:px-5" : ""}`}>
+      {isDrawer ? (
+        <div className="flex items-start justify-between gap-3 border-b border-app-fg/10 pb-3">
+          <h1 className="text-lg font-semibold text-app-fg">Трек: {d.trackNumber}</h1>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="shrink-0 border border-app-fg/15 p-1.5 text-app-fg/70"
+              aria-label="Закрыть"
+            >
+              <X className="h-4 w-4" strokeWidth={1.5} />
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <Link
+          href="/deliveries"
+          className="inline-flex items-center gap-2 text-sm text-app-fg/55 transition"
+        >
+          <ArrowLeft className="h-4 w-4" strokeWidth={1.5} />
+          Назад к доставкам
+        </Link>
+      )}
 
       <div className="space-y-3 border border-app-fg/15 bg-app-bg p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h1 className="text-lg font-semibold text-app-fg">Трек: {d.trackNumber}</h1>
+          {!isDrawer ? (
+            <h1 className="text-lg font-semibold text-app-fg">Трек: {d.trackNumber}</h1>
+          ) : (
+            <p className="text-sm font-medium uppercase tracking-wide text-app-fg/55">
+              Доставка
+            </p>
+          )}
           <span
             className={`inline-flex px-2 py-1 text-[10px] font-semibold uppercase tracking-wide ${statusClass(d.status)}`}
           >
@@ -289,14 +323,17 @@ export function DeliveryDetailScreen({ deliveryId }: { deliveryId: string }) {
             {isCdekRefreshing ? "Запрос…" : "Обновить статус"}
           </button>
           {isAdmin && (
-            <button
-              type="button"
-              onClick={handleRemove}
+            <ConfirmDeleteButton
+              onConfirm={handleRemove}
+              confirmLabel="Подтвердить удаление"
               className="inline-flex items-center gap-2 border border-app-fg/15 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/45"
+              confirmClassName="inline-flex items-center gap-2 border border-red-500/50 bg-red-500/10 px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-red-300"
             >
-              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-              Удалить доставку
-            </button>
+              <span className="inline-flex items-center gap-2">
+                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+                Удалить доставку
+              </span>
+            </ConfirmDeleteButton>
           )}
         </div>
 
@@ -364,13 +401,11 @@ export function DeliveryDetailScreen({ deliveryId }: { deliveryId: string }) {
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-xs uppercase tracking-wide text-app-fg/55">{item.size}</p>
                     {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={() => removeDeliveryItem(d.id, item.id)}
-                        className="text-[11px] uppercase text-app-fg/55 transition"
-                      >
-                        Удалить
-                      </button>
+                      <ConfirmDeleteButton
+                        onConfirm={() => removeDeliveryItem(d.id, item.id)}
+                        confirmLabel="Подтвердить?"
+                        className="text-[11px] uppercase text-app-fg/55 transition hover:text-red-400"
+                      />
                     )}
                   </div>
                 </div>
