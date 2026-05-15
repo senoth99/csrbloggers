@@ -8,7 +8,7 @@ const MAX_JSON_BYTES = 12 * 1024 * 1024;
 /**
  * Product policy: any authenticated panel user receives the full CRM snapshot.
  * There is no per-employee or per-role filtering on read — scope is enforced on
- * write (PUT requires admin/superadmin) and in UI where applicable.
+ * write (PUT for any authenticated user) and in UI where applicable.
  */
 export async function GET() {
   if (!isDatabaseConfigured()) {
@@ -36,10 +36,6 @@ export async function PUT(request: Request) {
   if (!user) {
     return NextResponse.json({ error: "Требуется вход." }, { status: 401 });
   }
-  if (user.role !== "admin" && user.role !== "superadmin") {
-    return NextResponse.json({ error: "Недостаточно прав." }, { status: 403 });
-  }
-
   const rawText = await request.text();
   if (rawText.length > MAX_JSON_BYTES) {
     return NextResponse.json({ error: "Слишком большой объём данных." }, { status: 413 });

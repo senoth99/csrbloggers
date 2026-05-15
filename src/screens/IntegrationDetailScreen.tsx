@@ -115,6 +115,7 @@ export function IntegrationDetailScreen({
     nicheOptions,
     employees,
     isAdmin,
+    canWriteCore,
     completedTaskKeys,
     updateIntegration,
     removeIntegration,
@@ -230,7 +231,7 @@ export function IntegrationDetailScreen({
   );
 
   const saveDrawerBlur = useCallback(() => {
-    if (!row || !isDrawer || !isAdmin) return;
+    if (!row || !isDrawer || !canWriteCore) return;
     const t = titleDraft.trim();
     if (!t) return;
     if (
@@ -413,7 +414,7 @@ export function IntegrationDetailScreen({
       {isDrawer ? (
         <header className="flex items-start justify-between gap-3 border-b border-app-fg/10 pb-3">
           <div className="min-w-0 flex-1 space-y-2">
-            {isAdmin ? (
+            {canWriteCore ? (
               <input
                 value={titleDraft}
                 onChange={(e) => setTitleDraft(e.target.value)}
@@ -423,7 +424,7 @@ export function IntegrationDetailScreen({
             ) : (
               <h1 className="text-base font-semibold text-app-fg">{row.title}</h1>
             )}
-            {isAdmin ? (
+            {canWriteCore ? (
               <StatusBadgeDropdown
                 value={row.status}
                 options={INTEGRATION_STATUSES.map((s) => ({
@@ -474,7 +475,7 @@ export function IntegrationDetailScreen({
             Создана {formatRuDate(row.createdAt ?? "")} · {formatRuTime(row.createdAt ?? "")}
           </p>
         </div>
-        {isAdmin ? (
+        {canWriteCore ? (
           <button
             type="button"
             onClick={openEdit}
@@ -488,7 +489,7 @@ export function IntegrationDetailScreen({
         </>
       )}
 
-      {isDrawer && isAdmin ? (
+      {isDrawer && canWriteCore ? (
         <section className="space-y-3">
           <div className="grid gap-2 sm:grid-cols-2">
             <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
@@ -662,7 +663,7 @@ export function IntegrationDetailScreen({
           <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-fg/45">
             Позиции
           </h2>
-          {isAdmin && (
+          {canWriteCore && (
             <button
               type="button"
               onClick={() => setIsAddPositionOpen((v) => !v)}
@@ -690,7 +691,7 @@ export function IntegrationDetailScreen({
                       <th className="border-b border-app-fg/10 px-3 py-2">Площадка</th>
                       <th className="border-b border-app-fg/10 px-3 py-2">Дата</th>
                       <th className="border-b border-app-fg/10 px-3 py-2 text-right">Бюджет, ₽</th>
-                      {isAdmin && <th className="border-b border-app-fg/10 px-3 py-2" />}
+                      {canWriteCore && <th className="border-b border-app-fg/10 px-3 py-2" />}
                     </tr>
                   </thead>
                   <tbody>
@@ -710,7 +711,7 @@ export function IntegrationDetailScreen({
                           <td className="px-3 py-2 text-right tabular-nums">
                             {pos.budget != null ? formatRuMoney(pos.budget) : "—"}
                           </td>
-                          {isAdmin && (
+                          {canWriteCore && (
                             <td className="px-3 py-2">
                               <ConfirmDeleteButton
                                 onConfirm={() => removeIntegrationPosition(row.id, pos.id)}
@@ -735,7 +736,7 @@ export function IntegrationDetailScreen({
                         <td className="px-3 py-2 text-right tabular-nums">
                           {formatRuMoney((row.positions ?? []).reduce((s, p) => s + (p.budget ?? 0), 0))}
                         </td>
-                        {isAdmin && <td />}
+                        {canWriteCore && <td />}
                       </tr>
                     </tfoot>
                   )}
@@ -743,7 +744,7 @@ export function IntegrationDetailScreen({
               </div>
             )}
 
-            {isAdmin && isAddPositionOpen && (
+            {canWriteCore && isAddPositionOpen && (
               <form onSubmit={handleAddPosition} className="space-y-3 border border-app-fg/15 p-4">
                 <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-fg/45">Новая позиция</p>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -862,7 +863,7 @@ export function IntegrationDetailScreen({
         )}
       </section>
 
-      {isAdmin && isEditOpen && !isDrawer ? (
+      {canWriteCore && isEditOpen && !isDrawer ? (
         <div className={overlayClass} role="presentation" onClick={closeEdit}>
           <div
             role="dialog"

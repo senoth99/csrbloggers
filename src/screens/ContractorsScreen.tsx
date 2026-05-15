@@ -69,6 +69,7 @@ function ContractorsScreenInner() {
     nicheOptions,
     socialOptions,
     isAdmin,
+    canWriteCore,
     addContractor,
     updateContractor,
   } = usePanelData();
@@ -384,7 +385,7 @@ function ContractorsScreenInner() {
     <div className="w-full max-w-full space-y-4">
       <div className={crmPageHeaderRowClass}>
         <h1 className={crmPageTitleClass}>Контрагенты</h1>
-        {isAdmin && (
+        {canWriteCore && (
           <button
             type="button"
             onClick={openCreateModal}
@@ -697,18 +698,16 @@ function ContractorsScreenInner() {
       {contractors.length === 0 && (
         <div className="flex flex-col items-center gap-4 border border-dashed border-app-fg/15 px-4 py-12 text-center">
           <p className="text-sm text-app-fg/55">Контрагентов пока нет.</p>
-          {isAdmin ? (
+          {canWriteCore ? (
             <button type="button" onClick={openCreateModal} className={primaryActionButtonClass}>
               <Plus className="h-4 w-4" strokeWidth={1.5} />
               Создать первого контрагента
             </button>
-          ) : (
-            <p className="text-xs text-app-fg/45">Попросите администратора добавить контрагента.</p>
-          )}
+          ) : null}
         </div>
       )}
 
-      {isAdmin ? (
+      {canWriteCore ? (
         <button
           type="button"
           onClick={openCreateModal}
@@ -734,7 +733,7 @@ function ContractorsScreenInner() {
       </SlideOver>
 
       <SlideOver
-        open={isCreateOpen && isAdmin}
+        open={isCreateOpen && canWriteCore}
         onClose={() => setIsCreateOpen(false)}
         title="Создать контрагента"
         widthClass="sm:max-w-lg"
@@ -757,7 +756,7 @@ function ContractorsScreenInner() {
           </div>
         }
       >
-        {isCreateOpen && isAdmin ? (
+        {isCreateOpen && canWriteCore ? (
           <form id="create-contractor-form" onSubmit={handleAdd} className="space-y-4">
               <label className="block text-xs uppercase tracking-wider text-app-fg/55">
                 Контактное лицо

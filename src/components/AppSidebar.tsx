@@ -33,10 +33,10 @@ const workItems: NavItem[] = [
   { href: "/tasks", label: "Задачи", icon: CheckSquare },
 ];
 
-const bottomItems: NavItem[] = [
-  { href: "/dashboard", label: "Дашборд", icon: BarChart3 },
-  { href: "/reports", label: "Отчёты", icon: FileText },
-  { href: "/admin", label: "Админ", icon: Settings },
+const bottomItems: (NavItem & { adminOnly?: boolean })[] = [
+  { href: "/dashboard", label: "Дашборд", icon: BarChart3, adminOnly: true },
+  { href: "/reports", label: "Отчёты", icon: FileText, adminOnly: true },
+  { href: "/admin", label: "Админ", icon: Settings, adminOnly: true },
 ];
 
 function NavLink({
@@ -78,6 +78,7 @@ function NavLink({
 export function AppSidebar({ className = "" }: { className?: string }) {
   const pathname = usePathname() ?? "";
   const { isAdmin } = usePanelData();
+  const visibleBottomItems = bottomItems.filter((item) => !item.adminOnly || isAdmin);
   const [collapsed, setCollapsed] = useState(false);
   const [ready, setReady] = useState(false);
 
@@ -131,34 +132,34 @@ export function AppSidebar({ className = "" }: { className?: string }) {
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col">
-      <nav className="shrink-0 py-1" aria-label="Рабочие разделы">
-        {workItems.map((item) => (
-          <NavLink
-            key={item.href}
-            item={item}
-            active={isActive(pathname, item.href)}
-            collapsed={collapsed}
-          />
-        ))}
-      </nav>
-
-      <div className="min-h-0 flex-1" aria-hidden />
-
-      <div className="shrink-0 pb-2">
-        <div className="border-t border-app-fg/10" aria-hidden />
-        <nav className="py-1" aria-label="Аналитика и настройки">
-          {bottomItems
-            .filter((item) => item.href !== "/admin" || isAdmin)
-            .map((item) => (
-              <NavLink
-                key={item.href}
-                item={item}
-                active={isActive(pathname, item.href)}
-                collapsed={collapsed}
-              />
-            ))}
+        <nav className="shrink-0 py-1" aria-label="Рабочие разделы">
+          {workItems.map((item) => (
+            <NavLink
+              key={item.href}
+              item={item}
+              active={isActive(pathname, item.href)}
+              collapsed={collapsed}
+            />
+          ))}
         </nav>
-      </div>
+
+        <div className="min-h-0 flex-1" aria-hidden />
+
+        {visibleBottomItems.length > 0 ? (
+          <div className="shrink-0 pb-2">
+            <div className="border-t border-app-fg/10" aria-hidden />
+            <nav className="py-1" aria-label="Аналитика и настройки">
+              {visibleBottomItems.map((item) => (
+                <NavLink
+                  key={item.href}
+                  item={item}
+                  active={isActive(pathname, item.href)}
+                  collapsed={collapsed}
+                />
+              ))}
+            </nav>
+          </div>
+        ) : null}
       </div>
     </aside>
   );

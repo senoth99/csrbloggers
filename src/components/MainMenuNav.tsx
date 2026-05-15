@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+import { isPanelAdminRole } from "@/lib/panel-auth-utils";
 import { isActive } from "@/lib/nav-utils";
 
 const navItems = [
   { href: "/integrations", label: "Интеграции" },
   { href: "/contractors", label: "Контрагенты" },
-  { href: "/dashboard", label: "Дашборд" },
+  { href: "/dashboard", label: "Дашборд", adminOnly: true },
   { href: "/deliveries", label: "Доставки" },
   { href: "/tasks", label: "Задачи" },
-  { href: "/reports", label: "Отчёты" },
+  { href: "/reports", label: "Отчёты", adminOnly: true },
 ] as const;
 
 function linkClass(active: boolean) {
@@ -23,6 +25,9 @@ function linkClass(active: boolean) {
 
 export function MainMenuNav() {
   const pathname = usePathname() ?? "";
+  const { role } = useAuth();
+  const isAdmin = isPanelAdminRole(role);
+  const visibleItems = navItems.filter((item) => !("adminOnly" in item && item.adminOnly) || isAdmin);
 
   return (
     <nav aria-label="Основное меню" className="w-full shrink-0 border-b border-app-fg/10 bg-app-bg">
@@ -32,7 +37,7 @@ export function MainMenuNav() {
           className="flex w-full min-w-0 overflow-x-auto overscroll-x-contain [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           style={{ WebkitOverflowScrolling: "touch" }}
         >
-          {navItems.map(({ href, label }) => {
+          {visibleItems.map(({ href, label }) => {
             const active = isActive(pathname, href);
             return (
               <Link key={href} href={href} className={linkClass(active)} title={label}>

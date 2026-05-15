@@ -4,11 +4,12 @@ import { useState, useEffect, Suspense, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { CasherLogoSpin } from "@/components/CasherLogoSpin";
+import { defaultAuthenticatedPath, isPanelAdminRole } from "@/lib/panel-auth-utils";
 
 const SAFE_INTERNAL_PATH = /^\/[a-zA-Z0-9_./?=&%-]*$/;
 
-function safeRedirectPath(raw: string | null | undefined): string {
-  const fallback = "/dashboard";
+function safeRedirectPath(raw: string | null | undefined, role: string | undefined): string {
+  const fallback = defaultAuthenticatedPath(role);
   if (!raw) return fallback;
   if (raw.startsWith("//")) return fallback;
   if (!SAFE_INTERNAL_PATH.test(raw)) return fallback;
@@ -16,7 +17,7 @@ function safeRedirectPath(raw: string | null | undefined): string {
 }
 
 function LoginForm() {
-  const { login, hydrated, isAuthenticated, authBackendError } = useAuth();
+  const { login, hydrated, isAuthenticated, authBackendError, role } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [loginField, setLoginField] = useState("");
@@ -24,14 +25,23 @@ function LoginForm() {
   const [busy, setBusy] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
 
-  const nextPath = searchParams?.get("next") || "/dashboard";
+  const nextRaw = searchParams?.get("next");
+  const nextPath = nextRaw || defaultAuthenticatedPath(role);
 
   useEffect(() => {
     if (!hydrated) return;
     if (isAuthenticated) {
-      router.replace(safeRedirectPath(nextPath));
+      const target = safeRedirectPath(nextRaw, role);
+      if (
+        !isPanelAdminRole(role) &&
+        (target === "/dashboard" || target.startsWith("/dashboard/") || target === "/reports")
+      ) {
+        router.replace(defaultAuthenticatedPath(role));
+        return;
+      }
+      router.replace(target);
     }
-  }, [hydrated, isAuthenticated, nextPath, router]);
+  }, [hydrated, isAuthenticated, nextRaw, role, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -41,8 +51,7 @@ function LoginForm() {
     setLoginError(null);
     try {
       const ok = await login(l, password);
-      if (ok) router.replace(safeRedirectPath(nextPath));
-      else setLoginError("Неверный логин или пароль.");
+      if (!ok) setLoginError("Неверный логин или пароль.");
     } finally {
       setBusy(false);
     }

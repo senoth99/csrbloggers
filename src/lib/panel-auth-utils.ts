@@ -9,3 +9,8 @@ export function normalizeUsername(raw: string): string {
 export function isPanelAdminRole(role: string | undefined | null): boolean {
   return role === "admin" || role === "superadmin";
 }
+
+/** Стартовая страница после входа. */
+export function defaultAuthenticatedPath(role: string | undefined | null): string {
+  return isPanelAdminRole(role) ? "/dashboard" : "/integrations";
+}

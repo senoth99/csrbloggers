@@ -16,9 +16,6 @@ export function AppShell({ children }: { children: ReactNode }) {
     retrySave,
     taskKeysError,
     clearTaskKeysError,
-    remoteUpdatePending,
-    applyRemoteUpdate,
-    dismissRemoteUpdate,
   } = usePanelData();
   return (
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-app-bg">
@@ -42,51 +39,19 @@ export function AppShell({ children }: { children: ReactNode }) {
             {saveError ??
               "Конфликт версий данных. Примите серверные данные или сохраните свои правки."}
           </span>
-          {remoteUpdatePending ? (
-            <button
-              type="button"
-              onClick={applyRemoteUpdate}
-              className="shrink-0 border border-amber-400/40 px-2 py-0.5 transition hover:border-amber-300/60"
-            >
-              Принять серверные
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={dismissSaveConflict}
-              className="shrink-0 border border-amber-400/40 px-2 py-0.5 transition hover:border-amber-300/60"
-            >
-              Принять серверные
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={dismissSaveConflict}
+            className="shrink-0 border border-amber-400/40 px-2 py-0.5 transition hover:border-amber-300/60"
+          >
+            Принять серверные
+          </button>
           <button
             type="button"
             onClick={applyLocalSaveConflict}
             className="shrink-0 border border-amber-400/40 px-2 py-0.5 transition hover:border-amber-300/60"
           >
             Сохранить мои правки
-          </button>
-        </div>
-      )}
-      {remoteUpdatePending && !saveConflictPending && (
-        <div className="flex shrink-0 items-center gap-3 bg-sky-950/60 px-4 py-2 text-xs text-sky-200">
-          <span className="flex-1">
-            На сервере или в другой вкладке есть более новая версия данных.
-          </span>
-          <button
-            type="button"
-            onClick={applyRemoteUpdate}
-            className="shrink-0 border border-sky-400/40 px-2 py-0.5 text-sky-100 transition hover:border-sky-300/60"
-          >
-            Обновить
-          </button>
-          <button
-            type="button"
-            onClick={dismissRemoteUpdate}
-            className="shrink-0 opacity-60 hover:opacity-100"
-            aria-label="Закрыть"
-          >
-            ✕
           </button>
         </div>
       )}
@@ -123,4 +88,3 @@ export function AppShell({ children }: { children: ReactNode }) {
     </div>
   );
 }
-

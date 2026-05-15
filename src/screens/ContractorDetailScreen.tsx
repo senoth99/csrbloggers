@@ -135,6 +135,7 @@ export function ContractorDetailScreen({
     socialOptions,
     nicheOptions,
     isAdmin,
+    canWriteCore,
     updateContractor,
     removeContractor,
     restoreContractorDeletion,
@@ -671,7 +672,7 @@ export function ContractorDetailScreen({
             <ContractorRatingBadge value={rating10} />
           </div>
         </div>
-        {isAdmin ? (
+        {canWriteCore ? (
           <button
             type="button"
             onClick={openEdit}
@@ -888,7 +889,7 @@ export function ContractorDetailScreen({
       </section>
       ) : null}
 
-      {isAdmin && !isDrawer && isEditOpen ? (
+      {canWriteCore && !isDrawer && isEditOpen ? (
         <div className={overlayClass} role="presentation" onClick={closeEdit}>
           <div
             role="dialog"
@@ -1109,7 +1110,7 @@ export function ContractorDetailScreen({
                 <input
                   key={`name-${contractor.id}-${contractor.name}`}
                   defaultValue={contractor.name ?? ""}
-                  disabled={!isAdmin}
+                  disabled={!canWriteCore}
                   onBlur={(e) => {
                     const v = e.target.value.trim();
                     if (v && v !== contractor.name) saveProfileBlur({ name: v });
@@ -1122,7 +1123,7 @@ export function ContractorDetailScreen({
                 <input
                   key={`cp-${contractor.id}-${contractor.contactPerson}`}
                   defaultValue={contractor.contactPerson ?? ""}
-                  disabled={!isAdmin}
+                  disabled={!canWriteCore}
                   onBlur={(e) => {
                     const v = e.target.value.trim();
                     if (v !== (contractor.contactPerson ?? ""))
@@ -1136,7 +1137,7 @@ export function ContractorDetailScreen({
                 <input
                   key={`city-${contractor.id}-${contractor.city}`}
                   defaultValue={contractor.city ?? ""}
-                  disabled={!isAdmin}
+                  disabled={!canWriteCore}
                   onBlur={(e) => {
                     const v = e.target.value.trim();
                     if (v !== (contractor.city ?? "")) saveProfileBlur({ city: v });
@@ -1149,7 +1150,7 @@ export function ContractorDetailScreen({
                 <input
                   key={`promo-${contractor.id}-${contractor.promoCode}`}
                   defaultValue={contractor.promoCode ?? ""}
-                  disabled={!isAdmin}
+                  disabled={!canWriteCore}
                   onBlur={(e) => {
                     const v = e.target.value.trim();
                     if (v !== (contractor.promoCode ?? "")) saveProfileBlur({ promoCode: v });
@@ -1162,7 +1163,7 @@ export function ContractorDetailScreen({
                 <input
                   key={`vir-${contractor.id}-${contractor.virality}`}
                   defaultValue={contractor.virality ?? ""}
-                  disabled={!isAdmin}
+                  disabled={!canWriteCore}
                   onBlur={(e) => {
                     const v = e.target.value.trim();
                     if (v !== (contractor.virality ?? "")) saveProfileBlur({ virality: v });
@@ -1175,7 +1176,7 @@ export function ContractorDetailScreen({
                 <select
                   key={`niche-${contractor.id}-${contractor.nicheId}`}
                   defaultValue={contractor.nicheId ?? ""}
-                  disabled={!isAdmin}
+                  disabled={!canWriteCore}
                   onChange={(e) => saveProfileBlur({ nicheId: e.target.value.trim() })}
                   className={`${selectClass} mt-1 ${selectNativeChevronPad}`}
                 >
@@ -1192,7 +1193,7 @@ export function ContractorDetailScreen({
                 <select
                   key={`size-${contractor.id}-${contractor.sizeCategory}`}
                   defaultValue={contractor.sizeCategory ?? ""}
-                  disabled={!isAdmin}
+                  disabled={!canWriteCore}
                   onChange={(e) => {
                     const v = e.target.value;
                     const hasSize =
@@ -1221,7 +1222,7 @@ export function ContractorDetailScreen({
               <h2 className="text-xs font-semibold uppercase tracking-wider text-app-fg/55">
                 Наличие
               </h2>
-              {isAdmin && (
+              {canWriteCore && (
                 <button
                   type="button"
                   onClick={() => setIsAddItemOpen(true)}
@@ -1414,7 +1415,7 @@ export function ContractorDetailScreen({
             ) : (
               <p className="border border-dashed border-app-fg/15 px-4 py-12 text-center text-sm text-app-fg/55">
                 Интеграций пока нет.
-                {isAdmin ? " Создайте первую в разделе «Интеграции»." : ""}
+                {canWriteCore ? " Создайте первую в разделе «Интеграции»." : ""}
               </p>
             )}
           </>
@@ -1426,7 +1427,7 @@ export function ContractorDetailScreen({
               <h2 className="text-xs font-semibold uppercase tracking-wider text-app-fg/55">
                 Ссылки
               </h2>
-              {isAdmin && (
+              {canWriteCore && (
                 <button
                   type="button"
                   onClick={openAddLink}
@@ -1485,27 +1486,31 @@ export function ContractorDetailScreen({
                                 </span>
                               )}
                             </div>
-                            {isAdmin ? (
+                            {canWriteCore || isAdmin ? (
                               <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => openEditLink(item)}
-                                  className="inline-flex items-center gap-1.5 border border-app-fg/15 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/35"
-                                >
-                                  <Pencil className="h-3 w-3" strokeWidth={1.75} />
-                                  Изменить
-                                </button>
-                                <ConfirmDeleteButton
-                                  onConfirm={() => removeContractorLink(item.id)}
-                                  confirmLabel="Подтвердить?"
-                                  className="inline-flex items-center gap-1.5 border border-app-fg/15 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/35"
-                                  confirmClassName="inline-flex items-center gap-1.5 border border-red-500/50 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-red-300"
-                                >
-                                  <span className="inline-flex items-center gap-1.5">
-                                    <Trash2 className="h-3 w-3" strokeWidth={1.5} />
-                                    Удалить
-                                  </span>
-                                </ConfirmDeleteButton>
+                                {canWriteCore ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditLink(item)}
+                                    className="inline-flex items-center gap-1.5 border border-app-fg/15 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/35"
+                                  >
+                                    <Pencil className="h-3 w-3" strokeWidth={1.75} />
+                                    Изменить
+                                  </button>
+                                ) : null}
+                                {isAdmin ? (
+                                  <ConfirmDeleteButton
+                                    onConfirm={() => removeContractorLink(item.id)}
+                                    confirmLabel="Подтвердить?"
+                                    className="inline-flex items-center gap-1.5 border border-app-fg/15 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/35"
+                                    confirmClassName="inline-flex items-center gap-1.5 border border-red-500/50 bg-red-500/10 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-red-300"
+                                  >
+                                    <span className="inline-flex items-center gap-1.5">
+                                      <Trash2 className="h-3 w-3" strokeWidth={1.5} />
+                                      Удалить
+                                    </span>
+                                  </ConfirmDeleteButton>
+                                ) : null}
                               </div>
                             ) : null}
                           </div>
@@ -1520,7 +1525,7 @@ export function ContractorDetailScreen({
         )}
       </section>
 
-      {isLinkModalOpen && isAdmin && contractor ? (
+      {isLinkModalOpen && canWriteCore && contractor ? (
         <div className={overlayClass} role="presentation" onClick={closeLinkModal}>
           <div
             role="dialog"
@@ -1600,7 +1605,7 @@ export function ContractorDetailScreen({
         </div>
       ) : null}
 
-      {isAddItemOpen && isAdmin && (
+      {isAddItemOpen && canWriteCore && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4">
           <div className="w-full max-w-lg border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6">
             <div className="mb-4 flex items-start justify-between gap-3">

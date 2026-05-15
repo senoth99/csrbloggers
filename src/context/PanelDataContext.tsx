@@ -395,6 +395,8 @@ interface PanelDataContextValue {
   deliveries: Delivery[];
   employees: Employee[];
   isAdmin: boolean;
+  /** Создание и правка контрагентов, интеграций, доставок (любой вошедший пользователь). */
+  canWriteCore: boolean;
   addContractor: (input: {
       name: string;
       contactPerson?: string;
@@ -524,10 +526,6 @@ interface PanelDataContextValue {
   retrySave: () => void;
   /** Ожидает debounce или активный PUT */
   savePending: boolean;
-  /** На сервере / в другой вкладке есть более новая версия */
-  remoteUpdatePending: boolean;
-  applyRemoteUpdate: () => void;
-  dismissRemoteUpdate: () => void;
   /** Снапшоты total-активаций промокодов (localStorage, не panel-data) */
   promocodeSnapshots: PromocodeSnapshotRow[];
   /** Записать снапшоты total-активаций промокодов */
@@ -559,8 +557,11 @@ const EMPTY_STORED: StoredShape = {
 export function PanelDataProvider({ children }: { children: ReactNode }) {
   const { role, currentLogin, isAuthenticated, hydrated } = useAuth();
   const isAdmin = role === "admin" || role === "superadmin";
+  const canWriteCore = isAuthenticated;
   const isAdminRef = useRef(isAdmin);
   isAdminRef.current = isAdmin;
+  const canWriteCoreRef = useRef(canWriteCore);
+  canWriteCoreRef.current = canWriteCore;
 
   const [data, setData] = useState<StoredShape>(EMPTY_STORED);
   const dataRef = useRef(data);
@@ -578,7 +579,6 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
   const [savePending, setSavePending] = useState(false);
   const [saveConflictPending, setSaveConflictPending] = useState(false);
   const [promocodeSnapshots, setPromocodeSnapshots] = useState<PromocodeSnapshotRow[]>([]);
-  const [remoteUpdatePending, setRemoteUpdatePending] = useState(false);
   const remotePayloadRef = useRef<{ data: unknown; revision: number } | null>(null);
   const conflictLocalRef = useRef<StoredShape | null>(null);
   const saveConflictPendingRef = useRef(false);
@@ -604,27 +604,37 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const applyRemoteUpdate = useCallback(() => {
+  const flushStashedRemoteSnapshot = useCallback(() => {
+    if (saveConflictPendingRef.current) return;
     const pending = remotePayloadRef.current;
     if (!pending) return;
-    if (flushTimerRef.current) {
-      clearTimeout(flushTimerRef.current);
-      flushTimerRef.current = null;
+    const localRev = serverRevisionRef.current ?? 0;
+    if (pending.revision <= localRev) {
+      remotePayloadRef.current = null;
+      return;
     }
-    conflictLocalRef.current = null;
-    setSaveConflictPending(false);
-    setSaveError(null);
-    syncSavePending();
+    if (flushTimerRef.current !== null || pendingSaveRef.current) return;
+    remotePayloadRef.current = null;
     applyServerPayload(pending.data, pending.revision);
-    remotePayloadRef.current = null;
-    setRemoteUpdatePending(false);
-  }, [applyServerPayload, syncSavePending]);
+  }, [applyServerPayload]);
 
-  const dismissRemoteUpdate = useCallback(() => {
-    if (saveConflictPendingRef.current) return;
-    remotePayloadRef.current = null;
-    setRemoteUpdatePending(false);
-  }, []);
+  const ingestNewerServerSnapshot = useCallback(
+    (bodyData: unknown, revision: number) => {
+      const localRev = serverRevisionRef.current ?? 0;
+      if (revision <= localRev || bodyData == null) return;
+      if (saveConflictPendingRef.current) {
+        remotePayloadRef.current = { data: bodyData, revision };
+        return;
+      }
+      if (flushTimerRef.current !== null || pendingSaveRef.current) {
+        remotePayloadRef.current = { data: bodyData, revision };
+        return;
+      }
+      remotePayloadRef.current = null;
+      applyServerPayload(bodyData, revision);
+    },
+    [applyServerPayload],
+  );
 
   const clearSaveConflict = useCallback(() => {
     conflictLocalRef.current = null;
@@ -637,11 +647,24 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!hydrated || !isAuthenticated) return;
     if (typeof BroadcastChannel === "undefined") return;
     const bc = new BroadcastChannel(PANEL_DATA_BC);
-    bc.onmessage = () => setRemoteUpdatePending(true);
+    bc.onmessage = () => {
+      void (async () => {
+        try {
+          const res = await fetch("/api/panel-data", { credentials: "include" });
+          if (!res.ok) return;
+          const body = (await res.json()) as { revision?: unknown; data?: unknown };
+          const revision = typeof body.revision === "number" ? body.revision : 0;
+          ingestNewerServerSnapshot(body.data, revision);
+        } catch {
+          /* ignore */
+        }
+      })();
+    };
     return () => bc.close();
-  }, []);
+  }, [hydrated, isAuthenticated, ingestNewerServerSnapshot]);
 
   const pruneStaleUserTaskKeysRef = useRef<() => void>(() => {});
 
@@ -798,9 +821,17 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       } finally {
         pendingSaveRef.current = false;
         syncSavePending();
+        flushStashedRemoteSnapshot();
       }
     },
-    [applyServerPayload, clearSaveConflict, isAuthenticated, reloadUserTaskKeys, syncSavePending],
+    [
+      applyServerPayload,
+      clearSaveConflict,
+      flushStashedRemoteSnapshot,
+      isAuthenticated,
+      reloadUserTaskKeys,
+      syncSavePending,
+    ],
   );
 
   const applyLocalSaveConflict = useCallback(() => {
@@ -809,7 +840,6 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
     clearSaveConflict();
     setSaveError(null);
     remotePayloadRef.current = null;
-    setRemoteUpdatePending(false);
     setData(local);
     saveStored(local);
     if (flushTimerRef.current) {
@@ -923,36 +953,34 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
   }, []);
 
+  const pollServerPanelSnapshot = useCallback(async () => {
+    try {
+      const res = await fetch("/api/panel-data", { credentials: "include" });
+      if (!res.ok) return;
+      const body = (await res.json()) as { revision?: unknown; data?: unknown };
+      const revision = typeof body.revision === "number" ? body.revision : 0;
+      ingestNewerServerSnapshot(body.data, revision);
+    } catch {
+      /* ignore */
+    }
+  }, [ingestNewerServerSnapshot]);
+
   useEffect(() => {
     if (!hydrated || !isAuthenticated) return;
     const id = window.setInterval(() => {
-      if (pendingSaveRef.current) return;
       if (document.visibilityState === "hidden") return;
-      void (async () => {
-        try {
-          const res = await fetch("/api/panel-data", { credentials: "include" });
-          if (!res.ok) return;
-          const body = (await res.json()) as { revision?: unknown; data?: unknown };
-          const revision = typeof body.revision === "number" ? body.revision : 0;
-          const localRev = serverRevisionRef.current ?? 0;
-          if (revision <= localRev) return;
-          if (body.data == null) return;
-          remotePayloadRef.current = { data: body.data, revision };
-          setRemoteUpdatePending(true);
-          if (flushTimerRef.current != null || pendingSaveRef.current) {
-            conflictLocalRef.current = dataRef.current;
-            setSaveConflictPending(true);
-            setSaveError(
-              "На сервере есть более новая версия. Примите серверные данные или сохраните свои правки — редактирование заблокировано.",
-            );
-          }
-        } catch {
-          /* ignore */
-        }
-      })();
-    }, 42_000);
-    return () => clearInterval(id);
-  }, [hydrated, isAuthenticated, applyServerPayload]);
+      void pollServerPanelSnapshot();
+    }, 5_000);
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void pollServerPanelSnapshot();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [hydrated, isAuthenticated, pollServerPanelSnapshot]);
 
   const patch = useCallback(
     (fn: (prev: StoredShape) => StoredShape) => {
@@ -987,7 +1015,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       initialLinks?: { title: string; url: string }[];
     }): string | null => {
       const n = input.name.trim();
-      if (!n || !isAdminRef.current) return null;
+      if (!n || !canWriteCoreRef.current) return null;
       const rawRating =
         typeof input.rating === "number" ? input.rating : Number(input.rating ?? 0);
       const newId = createPanelId();
@@ -1038,7 +1066,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       });
       return applied ? newId : null;
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const updateContractor = useCallback(
@@ -1060,7 +1088,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         >
       >,
     ) => {
-      if (!isAdminRef.current) return;
+      if (!canWriteCoreRef.current) return;
       patch((prev) => ({
         ...prev,
         contractors: prev.contractors.map((c) => {
@@ -1112,7 +1140,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         }),
       }));
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const removeContractor = useCallback(
@@ -1289,7 +1317,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
 
   const addIntegration = useCallback(
     (input: AddIntegrationInput): string | null => {
-      if (!isAdminRef.current) return null;
+      if (!canWriteCoreRef.current) return null;
       const contractorId = input.contractorId.trim();
       const socialPick = input.socialNetworkId.trim();
       const title = input.title?.trim() ?? "";
@@ -1349,7 +1377,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
 
       return applied ? newId : null;
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const updateIntegration = useCallback(
@@ -1374,7 +1402,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         >
       >,
     ) => {
-      if (!isAdminRef.current) return;
+      if (!canWriteCoreRef.current) return;
       const autoCompleteKeys: string[] = [];
       const autoUncompleteKeys: string[] = [];
       patch((prev) => {
@@ -1496,7 +1524,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         uncompleteTaskKeyRef.current(key);
       }
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const removeIntegration = useCallback(
@@ -1723,7 +1751,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       size: string;
       imageUrl?: string;
     }) => {
-      if (!isAdminRef.current) return;
+      if (!canWriteCoreRef.current) return;
       const contractorId = input.contractorId.trim();
       const productId = input.productId.trim();
       const productName = input.productName.trim();
@@ -1745,7 +1773,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         ],
       }));
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const removeContractorItem = useCallback(
@@ -1761,7 +1789,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
 
   const addContractorLink = useCallback(
     (input: { contractorId: string; title: string; url: string }) => {
-      if (!isAdminRef.current) return;
+      if (!canWriteCoreRef.current) return;
       const contractorId = input.contractorId.trim();
       const title = input.title.trim();
       const urlNorm = normalizeIntegrationPublicLink(input.url);
@@ -1780,12 +1808,12 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         ],
       }));
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const updateContractorLink = useCallback(
     (id: string, updates: Partial<Pick<ContractorLink, "title" | "url">>) => {
-      if (!isAdminRef.current) return;
+      if (!canWriteCoreRef.current) return;
       patch((prev) => ({
         ...prev,
         contractorLinks: prev.contractorLinks.map((row) => {
@@ -1803,7 +1831,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         }),
       }));
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const removeContractorLink = useCallback(
@@ -1819,7 +1847,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
 
   const addDelivery = useCallback(
     (input: AddDeliveryInput) => {
-      if (!isAdminRef.current) return null;
+      if (!canWriteCoreRef.current) return null;
       const contractorId = input.contractorId.trim();
       const orderNumber = input.orderNumber?.trim() ?? "";
       const trackNumber = input.trackNumber.trim();
@@ -1860,7 +1888,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       });
       return newId;
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const updateDeliveryStatus = useCallback(
@@ -1923,7 +1951,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         Pick<Delivery, "contractorId" | "orderNumber" | "trackNumber" | "assignedEmployeeId">
       >,
     ) => {
-      if (!isAdminRef.current) return;
+      if (!canWriteCoreRef.current) return;
       patch((prev) => ({
         ...prev,
         deliveries: prev.deliveries.map((delivery) => {
@@ -1951,7 +1979,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         }),
       }));
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const addDeliveryItem = useCallback(
@@ -1959,7 +1987,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       deliveryId: string,
       item: { productId: string; productName: string; size: string; imageUrl?: string },
     ) => {
-      if (!isAdminRef.current) return;
+      if (!canWriteCoreRef.current) return;
       const productId = item.productId.trim();
       const productName = item.productName.trim();
       const size = item.size.trim();
@@ -1987,7 +2015,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         }),
       }));
     },
-    [isAdmin, patch],
+    [patch],
   );
 
   const removeDeliveryItem = useCallback(
@@ -2108,6 +2136,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       deliveries: data.deliveries,
       employees: data.employees,
       isAdmin,
+      canWriteCore,
       addContractor,
       updateContractor,
       removeContractor,
@@ -2148,9 +2177,6 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       dismissSaveConflict,
       retrySave,
       savePending,
-      remoteUpdatePending,
-      applyRemoteUpdate,
-      dismissRemoteUpdate,
       promocodeSnapshots,
       recordPromocodeSnapshot,
       addIntegrationPosition,
@@ -2166,9 +2192,6 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       data.deliveries,
       data.employees,
       promocodeSnapshots,
-      remoteUpdatePending,
-      applyRemoteUpdate,
-      dismissRemoteUpdate,
       userTaskKeys,
       taskKeysError,
       clearTaskKeysError,
@@ -2180,6 +2203,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       retrySave,
       savePending,
       isAdmin,
+      canWriteCore,
       addContractor,
       updateContractor,
       removeContractor,

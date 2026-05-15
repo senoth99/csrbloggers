@@ -52,6 +52,7 @@ export function DeliveryDetailScreen({
     removeDeliveryItem,
     removeDelivery,
     isAdmin,
+    canWriteCore,
   } = usePanelData();
 
   const delivery = deliveries.find((d) => d.id === deliveryId);
@@ -304,7 +305,7 @@ export function DeliveryDetailScreen({
           )}
         </div>
         <div className="flex flex-wrap gap-2">
-          {isAdmin && (
+          {canWriteCore && (
             <button
               type="button"
               onClick={openEditMode}
@@ -363,7 +364,7 @@ export function DeliveryDetailScreen({
           <h2 className="text-xs font-semibold uppercase tracking-wider text-app-fg/55">
             Вещи в доставке
           </h2>
-          {isAdmin && (
+          {canWriteCore && (
             <button
               type="button"
               onClick={() => setIsItemPickerOpen(true)}
@@ -415,7 +416,7 @@ export function DeliveryDetailScreen({
         )}
       </section>
 
-      {isItemPickerOpen && isAdmin && (
+      {isItemPickerOpen && canWriteCore && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 px-4">
           <div className="w-full max-w-4xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6">
             <div className="mb-4 flex items-start justify-between gap-3">
@@ -524,7 +525,7 @@ export function DeliveryDetailScreen({
         </div>
       )}
 
-      {isEditOpen && isAdmin && (
+      {isEditOpen && canWriteCore && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 px-4">
           <div className="w-full max-w-2xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6">
             <div className="mb-4 flex items-start justify-between gap-3">

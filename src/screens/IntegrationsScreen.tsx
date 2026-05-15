@@ -97,6 +97,7 @@ export function IntegrationsScreen() {
     nicheOptions,
     employees,
     isAdmin,
+    canWriteCore,
     addIntegration,
     updateIntegration,
   } = usePanelData();
@@ -448,7 +449,7 @@ export function IntegrationsScreen() {
     URL.revokeObjectURL(url);
   }
 
-  const canAdd = isAdmin && contractors.length > 0 && socialOptions.length > 0;
+  const canAdd = canWriteCore && contractors.length > 0 && socialOptions.length > 0;
 
   const filteredIntegrations = useMemo(() => {
     return integrations.filter((row) => {
@@ -659,7 +660,7 @@ export function IntegrationsScreen() {
     <div className="w-full min-w-0 max-w-full space-y-4">
       <div className={crmPageHeaderRowClass}>
         <h1 className={crmPageTitleClass}>Интеграции</h1>
-        {isAdmin && (
+        {canWriteCore && (
           <button
             type="button"
             onClick={openAddModal}
@@ -1330,18 +1331,16 @@ export function IntegrationsScreen() {
       {integrations.length === 0 && (
         <div className="flex flex-col items-center gap-4 border border-dashed border-app-fg/15 px-4 py-12 text-center">
           <p className="text-sm text-app-fg/55">Интеграций пока нет.</p>
-          {isAdmin && canAdd ? (
+          {canAdd ? (
             <button type="button" onClick={openAddModal} className={primaryActionButtonClass}>
               <Plus className="h-4 w-4" strokeWidth={1.5} />
               Создать первую интеграцию
             </button>
-          ) : !isAdmin ? (
-            <p className="text-xs text-app-fg/45">Попросите администратора создать интеграцию.</p>
           ) : null}
         </div>
       )}
 
-      {isAdmin ? (
+      {canWriteCore ? (
         <button
           type="button"
           onClick={openAddModal}
@@ -1353,7 +1352,7 @@ export function IntegrationsScreen() {
       ) : null}
 
       <SlideOver
-        open={Boolean(isAdmin && isAddOpen)}
+        open={Boolean(canWriteCore && isAddOpen)}
         onClose={closeAddModal}
         title="Новая интеграция"
         footer={

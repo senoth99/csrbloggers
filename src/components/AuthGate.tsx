@@ -17,7 +17,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     if (!isAuthenticated) {
       const q = searchParams?.toString();
       const next = q ? `${pathname}?${q}` : pathname;
-      router.replace(`/login?next=${encodeURIComponent(next || "/dashboard")}`);
+      router.replace(`/login?next=${encodeURIComponent(next || "/integrations")}`);
     }
   }, [hydrated, isAuthenticated, pathname, router, searchParams]);
 

@@ -98,6 +98,7 @@ function DeliveriesScreenInner() {
     deliveries,
     employees,
     isAdmin,
+    canWriteCore,
     addDelivery,
     removeDelivery,
     updateDeliveryStatus,
@@ -560,7 +561,7 @@ function DeliveriesScreenInner() {
       <div className={crmPageHeaderRowClass}>
         <h1 className={crmPageTitleClass}>Доставки</h1>
         <div className="flex flex-wrap items-center gap-2">
-          {isAdmin && (
+          {canWriteCore && (
             <button
               type="button"
               onClick={() => setIsAddOpen(true)}
@@ -814,7 +815,7 @@ function DeliveriesScreenInner() {
       {deliveries.length === 0 ? (
         <div className="flex flex-col items-center gap-4 border border-dashed border-app-fg/15 px-4 py-12 text-center">
           <p className="text-sm text-app-fg/55">Доставок пока нет.</p>
-          {isAdmin ? (
+          {canWriteCore ? (
             <button
               type="button"
               onClick={() => setIsAddOpen(true)}
@@ -823,9 +824,7 @@ function DeliveriesScreenInner() {
               <Plus className="h-4 w-4" strokeWidth={1.5} />
               Создать первую доставку
             </button>
-          ) : (
-            <p className="text-xs text-app-fg/45">Попросите администратора создать доставку.</p>
-          )}
+          ) : null}
         </div>
       ) : filteredDeliveries.length === 0 ? (
         <p className="border border-dashed border-app-fg/15 px-4 py-8 text-sm text-app-fg/55">
@@ -925,7 +924,7 @@ function DeliveriesScreenInner() {
         </HorizontalScrollTable>
       )}
 
-      {isAdmin ? (
+      {canWriteCore ? (
         <button
           type="button"
           onClick={() => setIsAddOpen(true)}
@@ -937,7 +936,7 @@ function DeliveriesScreenInner() {
       ) : null}
 
       <SlideOver
-        open={isAddOpen && isAdmin}
+        open={isAddOpen && canWriteCore}
         onClose={closeAddModal}
         title="Добавить трек"
         widthClass="sm:max-w-lg"
@@ -960,7 +959,7 @@ function DeliveriesScreenInner() {
           </div>
         }
       >
-        {isAddOpen && isAdmin ? (
+        {isAddOpen && canWriteCore ? (
           <form id="add-delivery-form" onSubmit={handleAddTrack} className="space-y-4">
             <div>
               <p className="mb-2 text-xs uppercase tracking-wider text-app-fg/55">Контрагент</p>
