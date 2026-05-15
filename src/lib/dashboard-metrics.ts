@@ -26,7 +26,14 @@ export function isoInYearMonth(iso: string | undefined, ym: YearMonth): boolean 
   if (!iso?.trim()) return false;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return false;
-  return d.getFullYear() === ym.year && d.getMonth() + 1 === ym.month;
+  return d.getUTCFullYear() === ym.year && d.getUTCMonth() + 1 === ym.month;
+}
+
+/** Match YYYY-MM-DD date string against a YearMonth (no timezone shift). */
+function ymdInYearMonth(ymd: string | undefined, ym: YearMonth): boolean {
+  if (!ymd?.trim()) return false;
+  const prefix = `${ym.year}-${String(ym.month).padStart(2, "0")}`;
+  return ymd.trim().startsWith(prefix);
 }
 
 export function monthTitleRu(ym: YearMonth): string {
@@ -58,19 +65,18 @@ export function agreementsCreatedInMonth(
   ).length;
 }
 
-/** Опубликованные интеграции с датой создания в календарном месяце */
+/** Опубликованные интеграции с датой выхода (releaseDate) в календарном месяце. */
 export function integrationsPublishedInMonth(
   integrations: Integration[],
   ym: YearMonth,
 ): Integration[] {
-  return integrationsCreatedInMonth(integrations, ym).filter((i) =>
-    isPublishedIntegrationStatus(i.status),
+  return integrations.filter(
+    (i) => isPublishedIntegrationStatus(i.status) && ymdInYearMonth(i.releaseDate, ym),
   );
 }
 
 /**
- * Охваты по календарным дням месяца: суммируются reach у интеграций с createdAt в этом месяце
- * (день месяца в локальной таймзоне браузера, совпадает с логикой isoInYearMonth).
+ * Охваты по календарным дням месяца: суммируются reach у интеграций с releaseDate в этом месяце.
  */
 export function integrationReachByCalendarDayInMonth(
   integrations: Integration[],
@@ -79,12 +85,11 @@ export function integrationReachByCalendarDayInMonth(
   const n = daysInYearMonth(ym);
   const out = Array.from({ length: n }, () => 0);
   for (const i of integrations) {
-    if (!isoInYearMonth(i.createdAt, ym)) continue;
-    const raw = i.createdAt?.trim();
-    if (!raw) continue;
-    const d = new Date(raw);
-    if (Number.isNaN(d.getTime())) continue;
-    const dayOfMonth = d.getDate();
+    const rd = i.releaseDate?.trim();
+    if (!rd || !ymdInYearMonth(rd, ym)) continue;
+    const dayMatch = /^\d{4}-\d{2}-(\d{2})$/.exec(rd);
+    if (!dayMatch) continue;
+    const dayOfMonth = Number(dayMatch[1]);
     const idx = dayOfMonth - 1;
     if (idx < 0 || idx >= n) continue;
     if (i.reach != null && Number.isFinite(i.reach)) {

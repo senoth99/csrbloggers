@@ -1,13 +1,11 @@
 import { NextResponse } from "next/server";
 
-export const dynamic = "force-dynamic";
-
 const UPSTREAM = "https://api.cashercollection.com/products";
 
 /** Прокси каталога вещей: браузер не может дергать api.cashercollection.com с произвольного origin (CORS). */
 export async function GET() {
   try {
-    const res = await fetch(UPSTREAM, { cache: "no-store" });
+    const res = await fetch(UPSTREAM, { next: { revalidate: 300 } });
     const body = await res.text();
     return new NextResponse(body, {
       status: res.status,

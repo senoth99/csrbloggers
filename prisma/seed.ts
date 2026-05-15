@@ -1,11 +1,18 @@
 import { PrismaClient } from "@prisma/client";
-import { hashLoginPassword } from "../src/lib/auth-password";
+import { randomBytes } from "crypto";
+import { hashPassword } from "../src/lib/auth-password";
 import { SUPERADMIN_LOGIN } from "../src/lib/panel-auth-utils";
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await hashLoginPassword(SUPERADMIN_LOGIN, "admin");
+  const envPassword = process.env.SEED_ADMIN_PASSWORD?.trim();
+  const password = envPassword || randomBytes(12).toString("hex");
+  if (!envPassword) {
+    console.log(`\n  Superadmin password: ${password}\n  Set SEED_ADMIN_PASSWORD in .env to override.\n`);
+  }
+
+  const passwordHash = await hashPassword(password);
   await prisma.user.upsert({
     where: { login: SUPERADMIN_LOGIN },
     create: {
@@ -14,7 +21,7 @@ async function main() {
       role: "superadmin",
       displayName: "Суперадмин",
     },
-    update: {},
+    update: { passwordHash },
   });
 
   await prisma.panelSnapshot.upsert({

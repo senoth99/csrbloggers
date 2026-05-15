@@ -3,7 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { Download } from "lucide-react";
 import { usePanelData } from "@/context/PanelDataContext";
-import { usePromocodes } from "@/hooks/usePromocodes";
+import { usePromocodesCtx } from "@/context/PromocodesContext";
 import {
   DELIVERY_STATUS_LABELS,
   INTEGRATION_STATUS_LABELS,
@@ -41,10 +41,10 @@ export function DashboardScreen() {
   const { contractors, integrations, deliveries, socialOptions, recordPromocodeSnapshot, promocodeSnapshots } =
     usePanelData();
   const { items: promoItems, byCodeKey: promoByCodeKey, fetchedAt: promoFetchedAt } =
-    usePromocodes();
+    usePromocodesCtx();
 
-  const ym = useMemo(() => currentYearMonth(), []);
-  const ymPrev = useMemo(() => shiftYearMonth(ym, -1), [ym]);
+  const ym = currentYearMonth();
+  const ymPrev = shiftYearMonth(ym, -1);
 
   // фиксируем снапшот total-активаций (для расчёта "за месяц")
   useEffect(() => {
@@ -75,8 +75,9 @@ export function DashboardScreen() {
     const out = new Map<string, number>();
     for (const [k, l] of Array.from(last.entries())) {
       const f = first.get(k);
-      if (!f) continue;
-      const d = l.activations - f.activations;
+      // Single snapshot this month: use 0 as baseline (no prior data for the month)
+      const base = (f && f.t !== l.t) ? f.activations : 0;
+      const d = l.activations - base;
       if (Number.isFinite(d)) out.set(k, Math.max(0, d));
     }
     return out;
@@ -192,24 +193,39 @@ export function DashboardScreen() {
       i.id,
       (i.title ?? "").replace(/\s+/g, " ").trim(),
       INTEGRATION_STATUS_LABELS[i.status],
+      i.releaseDate ?? "",
       i.createdAt ?? "",
       contractorName.get(i.contractorId) ?? i.contractorId,
+      socialOptions.find((o) => o.id === i.socialNetworkId)?.label ?? i.socialNetworkId,
+      i.cooperationType ?? "",
+      i.reach != null ? String(i.reach) : "",
+      i.budget != null ? String(i.budget) : "",
     ]);
     const delRows = deliveriesCreatedInMonth(deliveries, month).map((d) => [
       "доставка",
       d.id,
       d.trackNumber,
       DELIVERY_STATUS_LABELS[d.status],
+      "",
       d.createdAt ?? "",
       contractorName.get(d.contractorId) ?? d.contractorId,
+      "",
+      "",
+      "",
+      "",
     ]);
     const header = [
       "Тип записи",
       "ID",
       "Название или трек",
       "Статус",
+      "Дата выхода",
       "Создано (ISO)",
       "Контрагент",
+      "Площадка",
+      "Тип сотрудничества",
+      "Охваты",
+      "Бюджет (₽)",
     ];
     const csv = rowsToCsv(header, [...intRows, ...delRows]);
     downloadUtf8Csv(
@@ -220,6 +236,22 @@ export function DashboardScreen() {
 
   return (
     <div className="space-y-10 pb-10">
+      {contractors.length === 0 && integrations.length === 0 && (
+        <div className="border border-app-fg/15 rounded-md px-6 py-8">
+          <p className="font-bold mb-2">Добро пожаловать в панель</p>
+          <p className="text-app-fg/70 text-sm mb-5">
+            Начните с добавления контрагента (блогера), затем создайте первую интеграцию.
+          </p>
+          <div className="flex flex-wrap gap-3">
+            <a href="/contractors" className="border border-app-fg/20 px-4 py-1.5 text-sm hover:bg-app-fg/5 rounded">
+              → Контрагенты
+            </a>
+            <a href="/integrations" className="border border-app-fg/20 px-4 py-1.5 text-sm hover:bg-app-fg/5 rounded">
+              → Интеграции
+            </a>
+          </div>
+        </div>
+      )}
       <DashboardChartSection title="Ключевые показатели">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
@@ -239,7 +271,7 @@ export function DashboardScreen() {
             trend={monthOverMonthTrend(kpi.agreements, kpi.agreementsPrev)}
           />
           <StatCard
-            label="Активаций промокодов"
+            label="Активаций промокодов (из интеграций)"
             value={nfKpi.format(kpi.promo)}
             trend={monthOverMonthTrend(kpi.promo, kpi.promoPrev)}
           />
@@ -247,7 +279,7 @@ export function DashboardScreen() {
       </DashboardChartSection>
 
       {promoPanelRows.length > 0 ? (
-        <DashboardChartSection title="Промокоды">
+        <DashboardChartSection title="Промокоды (Casher API)">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
             <p className="text-xs font-medium tabular-nums text-app-fg/70">
               Всего активаций: {nfKpi.format(promoPanelTotal)}

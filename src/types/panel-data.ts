@@ -4,7 +4,8 @@ export type IntegrationStatus =
   | "published"
   | "postponed"
   | "returned"
-  | "exchange";
+  | "exchange"
+  | "no_response";
 
 const LEGACY_INTEGRATION_STATUS: Record<string, IntegrationStatus | undefined> = {
   active: "published",
@@ -20,7 +21,8 @@ export function normalizeIntegrationStatus(raw: unknown): IntegrationStatus {
     s === "published" ||
     s === "postponed" ||
     s === "returned" ||
-    s === "exchange"
+    s === "exchange" ||
+    s === "no_response"
   ) {
     return s;
   }
@@ -51,6 +53,7 @@ export const INTEGRATION_STATUS_LABELS: Record<IntegrationStatus, string> = {
   postponed: "Перенос",
   returned: "Возврат",
   exchange: "Обмен",
+  no_response: "Не отвечает",
 };
 
 export const INTEGRATION_STATUSES: IntegrationStatus[] = [
@@ -59,6 +62,7 @@ export const INTEGRATION_STATUSES: IntegrationStatus[] = [
   "postponed",
   "returned",
   "exchange",
+  "no_response",
 ];
 
 /** Ниша контрагента: список задаётся админом в админке */
@@ -192,6 +196,19 @@ export interface Employee {
   createdAt?: string;
 }
 
+export interface IntegrationPosition {
+  id: string;
+  title: string;
+  status: IntegrationStatus;
+  socialNetworkId?: string;
+  contractorId?: string;
+  cooperationType?: IntegrationCooperationType;
+  assignedEmployeeId?: string;
+  releaseDate?: string;
+  budget?: number;
+  createdAt: string;
+}
+
 export interface Integration {
   id: string;
   contractorId: string;
@@ -221,6 +238,7 @@ export interface Integration {
   assignedEmployeeId?: string;
   /** Условия сотрудничества */
   cooperationType?: IntegrationCooperationType;
+  positions?: IntegrationPosition[];
   createdAt?: string;
 }
 
@@ -263,6 +281,7 @@ export const STATUS_BADGE_CLASS: Record<IntegrationStatus, string> = {
   postponed: "border-2 border-app-accent bg-app-bg text-app-fg",
   returned: "border border-transparent bg-app-fg/[0.14] text-app-fg/80",
   exchange: "border border-transparent bg-app-fg/[0.2] text-app-fg",
+  no_response: "border border-amber-700/40 bg-amber-950/30 text-amber-200/90",
 };
 
 export const CHANNEL_BADGE_CLASS =

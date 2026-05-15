@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { hashLoginPassword } from "@/lib/auth-password";
+import { hashPassword } from "@/lib/auth-password";
 import { getSessionUser, isDatabaseConfigured } from "@/lib/auth-session-prisma";
 import { normalizeUsername, SUPERADMIN_LOGIN } from "@/lib/panel-auth-utils";
 import { prisma } from "@/lib/prisma";
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   }
 
   const role = body.role === "admin" ? "admin" : "user";
-  const passwordHash = await hashLoginPassword(loginNorm, body.password);
+  const passwordHash = await hashPassword(body.password);
 
   await prisma.user.create({
     data: {

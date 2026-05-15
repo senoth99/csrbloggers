@@ -23,6 +23,7 @@ import type {
   Employee,
   Integration,
   IntegrationCooperationType,
+  IntegrationPosition,
   NicheOption,
   SocialOption,
 } from "@/types/panel-data";
@@ -538,6 +539,8 @@ interface PanelDataContextValue {
   completedTaskKeys: string[];
   /** Отметить задачу выполненной (доставка, проверка выхода интеграции). */
   completeTaskKey: (key: string) => void;
+  saveError: string | null;
+  clearSaveError: () => void;
   /** Снапшоты total-активаций промокодов (для расчёта дельт по месяцам) */
   promocodeSnapshots: Array<{ codeKey: string; t: number; activations: number }>;
   /** Записать снапшоты total-активаций промокодов */
@@ -545,6 +548,11 @@ interface PanelDataContextValue {
     items: Array<{ codeKey: string; activations: number }>,
     fetchedAt: number,
   ) => void;
+  addIntegrationPosition: (
+    integrationId: string,
+    input: Omit<IntegrationPosition, "id" | "createdAt">,
+  ) => void;
+  removeIntegrationPosition: (integrationId: string, positionId: string) => void;
 }
 
 const PanelDataContext = createContext<PanelDataContextValue | null>(null);
@@ -571,6 +579,12 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
   const [data, setData] = useState<StoredShape>(EMPTY_STORED);
   const dataRef = useRef(data);
   dataRef.current = data;
+
+  const [userTaskKeys, setUserTaskKeys] = useState<string[]>([]);
+  const userTaskKeysRef = useRef<string[]>([]);
+  userTaskKeysRef.current = userTaskKeys;
+
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const serverRevisionRef = useRef<number | null>(null);
   const pendingSaveRef = useRef(false);
@@ -604,6 +618,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           if (typeof j.revision === "number") {
             serverRevisionRef.current = j.revision;
           }
+          setSaveError(null);
           return true;
         }
         if (res.status === 409) {
@@ -615,9 +630,11 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         if (res.status === 401 || res.status === 403) {
           console.warn("[panel-data] отказ при сохранении (сессия)");
         }
+        setSaveError("Не удалось сохранить данные. Проверьте соединение.");
         return false;
       } catch (e) {
         console.error("[panel-data] сохранение не удалось", e);
+        setSaveError("Не удалось сохранить данные. Проверьте соединение.");
         return false;
       } finally {
         pendingSaveRef.current = false;
@@ -682,6 +699,16 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
     })();
     return () => ac.abort();
   }, [hydrated, isAuthenticated, applyServerPayload, pushSnapshotToServer]);
+
+  useEffect(() => {
+    if (!hydrated || !isAuthenticated) return;
+    void fetch("/api/tasks/completed", { credentials: "include" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((j: { keys?: string[] } | null) => {
+        if (Array.isArray(j?.keys)) setUserTaskKeys(j!.keys.filter((k): k is string => typeof k === "string"));
+      })
+      .catch(() => {});
+  }, [hydrated, isAuthenticated]);
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated) return;
@@ -1221,6 +1248,39 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
     [isAdmin, patch],
   );
 
+  const addIntegrationPosition = useCallback(
+    (integrationId: string, input: Omit<IntegrationPosition, "id" | "createdAt">) => {
+      const newPos: IntegrationPosition = {
+        id: createPanelId(),
+        ...input,
+        createdAt: new Date().toISOString(),
+      };
+      patch((prev) => ({
+        ...prev,
+        integrations: prev.integrations.map((r) =>
+          r.id === integrationId
+            ? { ...r, positions: [...(r.positions ?? []), newPos] }
+            : r,
+        ),
+      }));
+    },
+    [patch],
+  );
+
+  const removeIntegrationPosition = useCallback(
+    (integrationId: string, positionId: string) => {
+      patch((prev) => ({
+        ...prev,
+        integrations: prev.integrations.map((r) =>
+          r.id === integrationId
+            ? { ...r, positions: (r.positions ?? []).filter((p) => p.id !== positionId) }
+            : r,
+        ),
+      }));
+    },
+    [patch],
+  );
+
   const addSocialOption = useCallback(
     (label: string) => {
       const t = label.trim();
@@ -1633,13 +1693,22 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
     (key: string) => {
       const k = key.trim();
       if (!k) return;
-      patch((prev) => {
-        if (prev.completedTaskKeys.includes(k)) return prev;
-        return { ...prev, completedTaskKeys: [...prev.completedTaskKeys, k] };
+      setUserTaskKeys((prev) => {
+        if (prev.includes(k)) return prev;
+        const next = [...prev, k];
+        void fetch("/api/tasks/completed", {
+          method: "PUT",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ keys: Array.from(new Set([...userTaskKeysRef.current, k])) }),
+        }).catch(() => {});
+        return next;
       });
     },
-    [patch],
+    [],
   );
+
+  const clearSaveError = useCallback(() => setSaveError(null), []);
 
   const recordPromocodeSnapshot = useCallback(
     (items: Array<{ codeKey: string; activations: number }>, fetchedAt: number) => {
@@ -1724,10 +1793,14 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       addDeliveryItem,
       removeDeliveryItem,
       removeDelivery,
-      completedTaskKeys: data.completedTaskKeys,
+      completedTaskKeys: Array.from(new Set([...data.completedTaskKeys, ...userTaskKeys])),
       completeTaskKey,
+      saveError,
+      clearSaveError,
       promocodeSnapshots: data.promocodeSnapshots ?? [],
       recordPromocodeSnapshot,
+      addIntegrationPosition,
+      removeIntegrationPosition,
     }),
     [
       data.contractors,
@@ -1740,6 +1813,9 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       data.employees,
       data.completedTaskKeys,
       data.promocodeSnapshots,
+      userTaskKeys,
+      saveError,
+      clearSaveError,
       isAdmin,
       addContractor,
       updateContractor,
@@ -1770,6 +1846,8 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       removeDelivery,
       completeTaskKey,
       recordPromocodeSnapshot,
+      addIntegrationPosition,
+      removeIntegrationPosition,
     ],
   );
 

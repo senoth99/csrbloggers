@@ -32,9 +32,14 @@ export function ContractorListModal({
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
+    const sorted = [...contractors].sort((a, b) => {
+      const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const tb = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return tb - ta;
+    });
     const q = query.trim().toLowerCase();
-    if (!q) return contractors;
-    return contractors.filter((c) => {
+    if (!q) return sorted;
+    return sorted.filter((c) => {
       const fio = (c.contactPerson ?? "").toLowerCase();
       const nick = (c.name ?? "").toLowerCase();
       return fio.includes(q) || nick.includes(q);

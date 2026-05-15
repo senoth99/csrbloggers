@@ -38,6 +38,7 @@ export function TasksScreen() {
     employees,
     completedTaskKeys,
     completeTaskKey,
+    isAdmin,
   } = usePanelData();
 
   const completed = useMemo(
@@ -121,7 +122,7 @@ export function TasksScreen() {
               </section>
             ) : null}
 
-            {(myEmployeeId ? otherTasks.length > 0 : tasks.length > 0) ? (
+            {(isAdmin || !myEmployeeId) && (myEmployeeId ? otherTasks.length > 0 : tasks.length > 0) ? (
               <section>
                 <h3 className="bg-app-bg px-5 py-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-app-fg/45 sm:px-6">
                   {myEmployeeId ? "Все сотрудники" : "Задачи"}
@@ -161,7 +162,7 @@ function TaskDetailParagraph({ task }: { task: PanelTask }) {
       return (
         <p className="mt-1 text-xs text-app-fg/55">
           <Link
-            href={`/panel/${task.integrationId}`}
+            href={`/integrations/${task.integrationId}`}
             className="font-medium text-app-fg/80 transition hover:text-app-fg hover:underline"
           >
             {lead}
@@ -185,7 +186,7 @@ function TaskRow({
   assigneeLabel: string;
   onDone?: () => void;
 }) {
-  const titleHref = task.integrationId ? `/panel/${task.integrationId}` : task.href;
+  const titleHref = task.integrationId ? `/integrations/${task.integrationId}` : task.href;
 
   return (
     <li className="px-5 sm:px-6">

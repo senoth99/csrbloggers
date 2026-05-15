@@ -66,6 +66,8 @@ export function DeliveriesScreen() {
     updateDeliveryStatus,
   } = usePanelData();
 
+  const myEmployeeId = findEmployeeIdByPanelSession(employees, currentUsername);
+
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [contractorId, setContractorId] = useState("");
   const [orderNumber, setOrderNumber] = useState("");
@@ -73,6 +75,7 @@ export function DeliveriesScreen() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<DeliveryStatus | "all">("all");
   const [contractorFilter, setContractorFilter] = useState<string>("all");
+  const [employeeFilter, setEmployeeFilter] = useState<string>(() => isAdmin ? "all" : (myEmployeeId ?? "all"));
   const [isStatusListOpen, setIsStatusListOpen] = useState(false);
   const [isContractorPickerOpen, setIsContractorPickerOpen] = useState(false);
   const [contractorSearch, setContractorSearch] = useState("");
@@ -113,6 +116,7 @@ export function DeliveriesScreen() {
       if (contractorFilter !== "all" && delivery.contractorId !== contractorFilter) {
         return false;
       }
+      if (employeeFilter !== "all" && delivery.assignedEmployeeId !== employeeFilter) return false;
       if (statusFilter !== "all" && delivery.status !== statusFilter) return false;
       if (!q) return true;
       const contractor = contractors.find((c) => c.id === delivery.contractorId);
@@ -129,7 +133,7 @@ export function DeliveriesScreen() {
         DELIVERY_STATUS_LABELS[delivery.status].toLowerCase().includes(q)
       );
     });
-  }, [deliveries, statusFilter, search, contractors, contractorFilter, byEmployee]);
+  }, [deliveries, statusFilter, search, contractors, contractorFilter, employeeFilter, byEmployee]);
 
   const sortedDeliveries = useMemo(() => {
     const rows = [...filteredDeliveries];
@@ -356,8 +360,7 @@ export function DeliveriesScreen() {
   function handleAddTrack(e: FormEvent) {
     e.preventDefault();
     if (!contractorId || !trackNumber.trim()) return;
-    const assignedEmployeeId =
-      findEmployeeIdByPanelSession(employees, currentUsername) ?? undefined;
+    const assignedEmployeeId = myEmployeeId ?? undefined;
     addDelivery({
       contractorId,
       orderNumber: orderNumber.trim(),
@@ -416,7 +419,7 @@ export function DeliveriesScreen() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Поиск по треку, контрагенту, статусу…"
-            className="w-full border border-app-fg/15 bg-app-bg py-2.5 pl-9 pr-3 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+            className="w-full border border-app-fg/15 bg-app-bg py-2.5 pl-9 pr-3 text-xs text-app-fg outline-none ring-app-accent/35 focus:ring-2"
             type="search"
             aria-label="Поиск в списке доставок"
           />
@@ -434,6 +437,21 @@ export function DeliveriesScreen() {
             </option>
           ))}
         </select>
+        {isAdmin && (
+          <select
+            value={employeeFilter}
+            onChange={(e) => setEmployeeFilter(e.target.value)}
+            aria-label="Фильтр по сотруднику"
+            className={`min-h-[42px] border border-app-fg/15 bg-app-bg px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-app-fg outline-none ring-app-accent/35 focus:ring-2 ${selectNativeChevronPad}`}
+          >
+            <option value="all">Все сотрудники</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>
+                {abbreviateFio(e.fullName)}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="relative lg:col-span-4">
           <button
             type="button"
@@ -491,7 +509,8 @@ export function DeliveriesScreen() {
           Нет строк по текущему фильтру. Измените поиск, контрагента или статус.
         </p>
       ) : (
-        <div className="overflow-x-auto bg-app-bg">
+        <div className="relative">
+          <div className="overflow-x-auto bg-app-bg">
           <table className="w-full min-w-[760px] border-separate border-spacing-0 text-left text-xs text-app-fg">
             <thead>
               <tr
@@ -603,6 +622,8 @@ export function DeliveriesScreen() {
               })}
             </tbody>
           </table>
+          </div>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-app-bg to-transparent" aria-hidden="true" />
         </div>
       )}
 

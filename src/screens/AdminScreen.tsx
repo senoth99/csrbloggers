@@ -66,7 +66,7 @@ export function AdminScreen() {
 
   if (!hydrated) {
     return (
-      <div className="text-center text-sm text-app-fg/55" style={{ color: "rgba(255,255,255,0.55)" }}>
+      <div className="text-center text-sm text-app-fg/55">
         Загрузка…
       </div>
     );

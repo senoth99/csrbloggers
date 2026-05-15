@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Pencil, Save, Trash2, X } from "lucide-react";
+import { ArrowLeft, Pencil, Plus, Save, Trash2, X } from "lucide-react";
 import { usePanelData } from "@/context/PanelDataContext";
 import { ContractorListModal } from "@/components/ContractorListModal";
 import { CrmPill } from "@/components/CrmPill";
@@ -11,14 +11,17 @@ import {
   CHANNEL_BADGE_CLASS,
   CONTRACTOR_SIZE_CATEGORY_LABELS,
   INTEGRATION_COOPERATION_LABELS,
+  INTEGRATION_COOPERATION_TYPES,
   INTEGRATION_STATUSES,
   INTEGRATION_STATUS_LABELS,
   STATUS_BADGE_CLASS,
   type Integration,
   type IntegrationCooperationType,
+  type IntegrationPosition,
   type IntegrationStatus,
 } from "@/types/panel-data";
 import {
+  formatCalendarDate,
   formatIntegrationReleaseLine,
   formatRuCpm,
   formatRuDate,
@@ -94,6 +97,8 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
     isAdmin,
     updateIntegration,
     removeIntegration,
+    addIntegrationPosition,
+    removeIntegrationPosition,
   } = usePanelData();
 
   const [isEditOpen, setIsEditOpen] = useState(false);
@@ -114,6 +119,16 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
   const [cooperationDraft, setCooperationDraft] = useState<IntegrationCooperationType | "">(
     "",
   );
+
+  const [isAddPositionOpen, setIsAddPositionOpen] = useState(false);
+  const [posTitleDraft, setPosTitleDraft] = useState("");
+  const [posStatusDraft, setPosStatusDraft] = useState<IntegrationStatus>("draft");
+  const [posSocialDraft, setPosSocialDraft] = useState("");
+  const [posContractorDraft, setPosContractorDraft] = useState("");
+  const [posCoopDraft, setPosCoopDraft] = useState<IntegrationCooperationType | "">("");
+  const [posEmployeeDraft, setPosEmployeeDraft] = useState("");
+  const [posDateDraft, setPosDateDraft] = useState("");
+  const [posBudgetDraft, setPosBudgetDraft] = useState("");
 
   const row = integrations.find((i) => i.id === integrationId);
   const contractor = contractors.find((c) => c.id === row?.contractorId);
@@ -186,7 +201,7 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
   if (!row) {
     return (
       <div className="space-y-4">
-        <BackLink href="/panel" />
+        <BackLink href="/integrations" />
         <p className="text-sm text-app-fg/55">Интеграция не найдена.</p>
       </div>
     );
@@ -203,7 +218,7 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
     if (!isAdmin || !row) return;
     if (!window.confirm("Удалить эту интеграцию?")) return;
     removeIntegration(row.id);
-    router.replace("/panel");
+    router.replace("/integrations");
   }
 
   function handleSave() {
@@ -271,6 +286,32 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
     setIsEditOpen(false);
   }
 
+  function handleAddPosition(e: React.FormEvent) {
+    e.preventDefault();
+    const titleTrim = posTitleDraft.trim();
+    if (!titleTrim || !row) return;
+    const budget = parseBudgetReachField(posBudgetDraft);
+    addIntegrationPosition(row.id, {
+      title: titleTrim,
+      status: posStatusDraft,
+      ...(posSocialDraft ? { socialNetworkId: posSocialDraft } : {}),
+      ...(posContractorDraft ? { contractorId: posContractorDraft } : {}),
+      ...(posCoopDraft === "barter" || posCoopDraft === "commercial" ? { cooperationType: posCoopDraft } : {}),
+      ...(posEmployeeDraft ? { assignedEmployeeId: posEmployeeDraft } : {}),
+      ...(posDateDraft.trim() ? { releaseDate: posDateDraft.trim() } : {}),
+      ...(budget !== undefined ? { budget } : {}),
+    });
+    setPosTitleDraft("");
+    setPosStatusDraft("draft");
+    setPosSocialDraft("");
+    setPosContractorDraft("");
+    setPosCoopDraft("");
+    setPosEmployeeDraft("");
+    setPosDateDraft("");
+    setPosBudgetDraft("");
+    setIsAddPositionOpen(false);
+  }
+
   const budgetLive = draftOrSaved(isEditOpen, budgetDraft, row.budget);
   const reachLive = draftOrSaved(isEditOpen, reachDraft, row.reach);
   const cpmRub = computeCpmRub(budgetLive, reachLive);
@@ -278,7 +319,7 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-8 pb-10">
-      <BackLink href="/panel" />
+      <BackLink href="/integrations" />
 
       <header className="flex flex-col gap-4 border-b border-app-fg/10 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0 space-y-2">
@@ -414,6 +455,214 @@ export function IntegrationDetailScreen({ integrationId }: { integrationId: stri
             )}
           </InfoBlock>
         </div>
+      </section>
+
+      <section className="space-y-4">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-fg/45">
+            Позиции
+          </h2>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setIsAddPositionOpen((v) => !v)}
+              className="inline-flex items-center gap-1.5 border border-app-fg/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-accent/50 hover:bg-app-accent/10"
+            >
+              <Plus className="h-3.5 w-3.5" strokeWidth={2} />
+              {isAddPositionOpen ? "Отмена" : "Добавить"}
+            </button>
+          )}
+        </div>
+
+        {(row.positions ?? []).length === 0 && !isAddPositionOpen ? (
+          <p className="border border-dashed border-app-fg/15 px-4 py-6 text-center text-sm text-app-fg/40">
+            Позиций нет
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {(row.positions ?? []).length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[600px] border-separate border-spacing-0 text-left text-[11px] text-app-fg">
+                  <thead>
+                    <tr className="text-[10px] font-semibold uppercase tracking-wide text-app-fg/50">
+                      <th className="border-b border-app-fg/10 px-3 py-2">Название</th>
+                      <th className="border-b border-app-fg/10 px-3 py-2">Статус</th>
+                      <th className="border-b border-app-fg/10 px-3 py-2">Площадка</th>
+                      <th className="border-b border-app-fg/10 px-3 py-2">Дата</th>
+                      <th className="border-b border-app-fg/10 px-3 py-2 text-right">Бюджет, ₽</th>
+                      {isAdmin && <th className="border-b border-app-fg/10 px-3 py-2" />}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(row.positions ?? []).map((pos) => {
+                      const posContractor = contractors.find((c) => c.id === pos.contractorId);
+                      const posSocial = socialOptions.find((o) => o.id === pos.socialNetworkId);
+                      return (
+                        <tr key={pos.id} className="border-t border-app-fg/8 hover:bg-app-fg/[0.02]">
+                          <td className="px-3 py-2 font-medium">{pos.title}</td>
+                          <td className="px-3 py-2">
+                            <CrmPill className={STATUS_BADGE_CLASS[pos.status]}>
+                              {INTEGRATION_STATUS_LABELS[pos.status]}
+                            </CrmPill>
+                          </td>
+                          <td className="px-3 py-2 text-app-fg/70">{posSocial?.label ?? "—"}</td>
+                          <td className="px-3 py-2 text-app-fg/70">{pos.releaseDate ? formatCalendarDate(pos.releaseDate) : "—"}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {pos.budget != null ? formatRuMoney(pos.budget) : "—"}
+                          </td>
+                          {isAdmin && (
+                            <td className="px-3 py-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!window.confirm(`Удалить позицию «${pos.title}»?`)) return;
+                                  removeIntegrationPosition(row.id, pos.id);
+                                }}
+                                className="text-app-fg/30 transition hover:text-red-400"
+                                aria-label="Удалить позицию"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {(row.positions ?? []).some((p) => p.budget != null) && (
+                    <tfoot>
+                      <tr className="border-t border-app-fg/15 font-semibold">
+                        <td className="px-3 py-2 text-[10px] uppercase tracking-wide text-app-fg/55" colSpan={4}>
+                          Итого
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums">
+                          {formatRuMoney((row.positions ?? []).reduce((s, p) => s + (p.budget ?? 0), 0))}
+                        </td>
+                        {isAdmin && <td />}
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              </div>
+            )}
+
+            {isAdmin && isAddPositionOpen && (
+              <form onSubmit={handleAddPosition} className="space-y-3 border border-app-fg/15 p-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-fg/45">Новая позиция</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Название *</label>
+                    <input
+                      required
+                      value={posTitleDraft}
+                      onChange={(e) => setPosTitleDraft(e.target.value)}
+                      placeholder="Название позиции"
+                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Статус</label>
+                    <select
+                      value={posStatusDraft}
+                      onChange={(e) => setPosStatusDraft(e.target.value as IntegrationStatus)}
+                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                    >
+                      {INTEGRATION_STATUSES.map((s) => (
+                        <option key={s} value={s}>{INTEGRATION_STATUS_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Площадка</label>
+                    <select
+                      value={posSocialDraft}
+                      onChange={(e) => setPosSocialDraft(e.target.value)}
+                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                    >
+                      <option value="">— любая —</option>
+                      {socialOptions.map((o) => (
+                        <option key={o.id} value={o.id}>{o.label}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Контрагент</label>
+                    <select
+                      value={posContractorDraft}
+                      onChange={(e) => setPosContractorDraft(e.target.value)}
+                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                    >
+                      <option value="">— из интеграции —</option>
+                      {contractors.map((c) => (
+                        <option key={c.id} value={c.id}>{c.contactPerson?.trim() || c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Условия</label>
+                    <select
+                      value={posCoopDraft}
+                      onChange={(e) => setPosCoopDraft(e.target.value as IntegrationCooperationType | "")}
+                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                    >
+                      <option value="">— не указаны —</option>
+                      {INTEGRATION_COOPERATION_TYPES.map((t) => (
+                        <option key={t} value={t}>{INTEGRATION_COOPERATION_LABELS[t]}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Сотрудник</label>
+                    <select
+                      value={posEmployeeDraft}
+                      onChange={(e) => setPosEmployeeDraft(e.target.value)}
+                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                    >
+                      <option value="">— не назначен —</option>
+                      {employees.map((e) => (
+                        <option key={e.id} value={e.id}>{e.fullName}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Дата (ГГГГ-ММ-ДД)</label>
+                    <input
+                      type="date"
+                      value={posDateDraft}
+                      onChange={(e) => setPosDateDraft(e.target.value)}
+                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Бюджет, ₽</label>
+                    <input
+                      type="text"
+                      value={posBudgetDraft}
+                      onChange={(e) => setPosBudgetDraft(e.target.value)}
+                      placeholder="0"
+                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="submit"
+                    className="border border-app-fg/20 bg-app-fg/[0.04] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-accent/50 hover:bg-app-accent/10"
+                  >
+                    Добавить
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddPositionOpen(false)}
+                    className="border border-app-fg/15 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg/60 transition hover:border-app-fg/30"
+                  >
+                    Отмена
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        )}
       </section>
 
       {isAdmin && isEditOpen ? (

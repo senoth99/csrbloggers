@@ -27,7 +27,7 @@ import {
 } from "@/lib/dashboard-metrics";
 import { ContractorRatingBadge } from "@/components/ContractorRatingBadge";
 import { CrmPill } from "@/components/CrmPill";
-import { usePromocodes } from "@/hooks/usePromocodes";
+import { usePromocodesCtx } from "@/context/PromocodesContext";
 import {
   CHANNEL_BADGE_CLASS,
   CONTRACTOR_SIZE_CATEGORY_LABELS,
@@ -135,7 +135,7 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
     removeContractorLink,
   } = usePanelData();
   const { byCodeKey: promoByCodeKey, loading: promoLoading, error: promoError } =
-    usePromocodes();
+    usePromocodesCtx();
   const [products, setProducts] = useState<ApiProduct[]>([]);
   const [isProductsLoading, setIsProductsLoading] = useState(false);
   const [productsError, setProductsError] = useState<string | null>(null);
@@ -959,21 +959,25 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
           <TabButton
             active={activeTab === "availability"}
             label="НАЛИЧИЕ"
+            count={ownedItems.length}
             onClick={() => setActiveTab("availability")}
           />
           <TabButton
             active={activeTab === "deliveries"}
             label="ДОСТАВКИ"
+            count={contractorDeliveries.length}
             onClick={() => setActiveTab("deliveries")}
           />
           <TabButton
             active={activeTab === "integrations"}
             label="ИНТЕГРАЦИИ"
+            count={related.length}
             onClick={() => setActiveTab("integrations")}
           />
           <TabButton
             active={activeTab === "links"}
             label="ССЫЛКИ"
+            count={ownedLinks.length}
             onClick={() => setActiveTab("links")}
           />
         </div>
@@ -1052,7 +1056,11 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
                       {isAdmin && (
                         <button
                           type="button"
-                          onClick={() => removeContractorItem(item.id)}
+                          onClick={() => {
+                            if (window.confirm(`Удалить «${item.productName}» (${item.size})?`)) {
+                              removeContractorItem(item.id);
+                            }
+                          }}
                           className="pt-1 text-[11px] text-app-fg/55 transition"
                         >
                           Удалить
@@ -1152,7 +1160,7 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
                   return (
                     <li key={i.id}>
                       <Link
-                        href={`/panel/${i.id}`}
+                        href={`/integrations/${i.id}`}
                         className="flex flex-col gap-2 px-3 py-3 transition hover:bg-app-fg/5 sm:flex-row sm:items-center sm:justify-between"
                       >
                         <span className="truncate text-sm font-medium text-app-fg">
@@ -1261,7 +1269,11 @@ export function ContractorDetailScreen({ contractorId }: { contractorId: string 
                                 </button>
                                 <button
                                   type="button"
-                                  onClick={() => removeContractorLink(item.id)}
+                                  onClick={() => {
+                                    if (window.confirm(`Удалить ссылку «${item.title}»?`)) {
+                                      removeContractorLink(item.id);
+                                    }
+                                  }}
                                   className="inline-flex items-center gap-1.5 border border-app-fg/15 px-2.5 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-fg/35"
                                 >
                                   <Trash2 className="h-3 w-3" strokeWidth={1.5} />
@@ -1519,10 +1531,12 @@ function BackLink({ href }: { href: string }) {
 function TabButton({
   active,
   label,
+  count,
   onClick,
 }: {
   active: boolean;
   label: string;
+  count?: number;
   onClick: () => void;
 }) {
   return (
@@ -1531,11 +1545,16 @@ function TabButton({
       onClick={onClick}
       className={
         active
-          ? "bg-app-accent px-3 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg"
-          : "border border-app-fg/15 bg-app-bg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg/65 transition"
+          ? "inline-flex items-center gap-1.5 bg-app-accent px-3 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg"
+          : "inline-flex items-center gap-1.5 border border-app-fg/15 bg-app-bg px-3 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg/65 transition"
       }
     >
       {label}
+      {count != null && count > 0 ? (
+        <span className={active ? "tabular-nums opacity-70" : "tabular-nums opacity-50"}>
+          {count}
+        </span>
+      ) : null}
     </button>
   );
 }

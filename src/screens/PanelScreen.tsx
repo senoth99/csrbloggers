@@ -27,6 +27,7 @@ import {
   formatIntegrationReleaseDateTable,
   formatIntegrationReleaseLine,
   formatRuDate,
+  formatRuMoney,
   formatRuTime,
 } from "@/lib/format-ru";
 import { normalizeIntegrationPublicLink } from "@/lib/integration-link";
@@ -42,12 +43,13 @@ import {
 import { compareNumbers, compareStringsRu, parseTimeMs } from "@/lib/table-sort";
 import { nicheChoiceCaption } from "@/lib/niche-display";
 import { parseYmdLocal } from "@/lib/task-deadline";
+import { currentYearMonth, shiftYearMonth, monthTitleRu, formatYearMonthString } from "@/lib/dashboard-metrics";
 
 const fieldClass =
   "w-full min-w-0 border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2";
 
 /** Фильтры над таблицей — подписи в капсе (как в макете) */
-const filterSelectClass = `${fieldClass} min-h-[44px] ${selectNativeChevronPad} uppercase tracking-[0.08em]`;
+const filterSelectClass = `${fieldClass} min-h-[44px] ${selectNativeChevronPad} uppercase tracking-[0.08em] text-[11px]`;
 
 function integrationTitleKey(title: string): string {
   return title.trim().toLowerCase().replace(/\s+/g, " ");
@@ -115,6 +117,8 @@ export function PanelScreen() {
   /** all | IntegrationCooperationType | __no_coop__ */
   const [cooperationFilter, setCooperationFilter] = useState<string>("all");
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [formEmployeeId, setFormEmployeeId] = useState<string>("");
+  const [monthFilter, setMonthFilter] = useState<string>("all");
 
   const byContractor = useMemo(() => {
     const m = new Map<string, string>();
@@ -175,6 +179,14 @@ export function PanelScreen() {
     [integrations],
   );
 
+  const monthOptions = useMemo(() => {
+    const ym = currentYearMonth();
+    return Array.from({ length: 12 }, (_, i) => {
+      const m = shiftYearMonth(ym, -i);
+      return { value: formatYearMonthString(m), label: monthTitleRu(m) };
+    });
+  }, []);
+
   useEffect(() => {
     const mq = window.matchMedia("(min-width: 768px)");
     const sync = () => {
@@ -202,6 +214,7 @@ export function PanelScreen() {
     setReachInput("");
     setLinkInput("");
     setCooperationType("");
+    setFormEmployeeId(findEmployeeIdByPanelSession(employees, currentUsername) ?? "");
     setAddFormError(null);
     setIsAddOpen(true);
   }
@@ -232,8 +245,7 @@ export function PanelScreen() {
     const budget = parseBudgetReachField(budgetInput);
     const reach = parseBudgetReachField(reachInput);
 
-    const assignedEmployeeId =
-      findEmployeeIdByPanelSession(employees, currentUsername) ?? undefined;
+    const assignedEmployeeId = formEmployeeId.trim() || undefined;
     const publicLink = normalizeIntegrationPublicLink(linkInput);
     const id = addIntegration({
       contractorId,
@@ -252,14 +264,14 @@ export function PanelScreen() {
     });
     if (id) {
       closeAddModal();
-      router.push(`/panel/${id}`);
+      router.push(`/integrations/${id}`);
     } else {
       setAddFormError("Не удалось создать интеграцию (заголовок занят или нет данных).");
     }
   }
 
   function openRow(id: string) {
-    router.push(`/panel/${id}`);
+    router.push(`/integrations/${id}`);
   }
 
   const canAdd = isAdmin && contractors.length > 0 && socialOptions.length > 0;
@@ -307,6 +319,7 @@ export function PanelScreen() {
           return false;
         }
       }
+      if (monthFilter !== "all" && !row.releaseDate?.startsWith(monthFilter)) return false;
       const q = tableSearch.trim().toLowerCase();
       if (!q) return true;
       const contractorName = byContractor.get(row.contractorId) ?? "";
@@ -359,6 +372,7 @@ export function PanelScreen() {
     nicheFilter,
     sizeCategoryFilter,
     cooperationFilter,
+    monthFilter,
     byContractor,
     contractorById,
     socialOptions,
@@ -624,6 +638,17 @@ export function PanelScreen() {
                 </option>
               ))}
             </select>
+            <select
+              value={monthFilter}
+              onChange={(e) => setMonthFilter(e.target.value)}
+              aria-label="Фильтр по месяцу"
+              className={filterSelectClass}
+            >
+              <option value="all">Все месяцы</option>
+              {monthOptions.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
           </div>
         </div>
       )}
@@ -746,6 +771,7 @@ export function PanelScreen() {
                     Дата выхода
                   </span>
                 </SortableTh>
+                <th className="hidden min-w-0 py-2.5 px-2 text-right align-middle md:table-cell">Бюджет, ₽</th>
               </tr>
             </thead>
             <tbody>
@@ -794,7 +820,7 @@ export function PanelScreen() {
                     </td>
                     <td className="min-w-0 truncate px-2 py-2.5 align-middle max-md:w-[36%]">
                       <Link
-                        href={`/panel/${row.id}`}
+                        href={`/integrations/${row.id}`}
                         className="block min-w-0 truncate font-medium text-app-fg"
                         title={row.title ?? undefined}
                         onClick={(e) => e.stopPropagation()}
@@ -832,6 +858,16 @@ export function PanelScreen() {
                       }
                     >
                       {formatIntegrationReleaseDateTable(row.releaseDate)}
+                    </td>
+                    <td className="hidden min-w-0 px-2 py-2 text-right tabular-nums text-app-fg/80 md:table-cell">
+                      {(() => {
+                        const positions = row.positions ?? [];
+                        if (positions.length > 0) {
+                          const sum = positions.reduce((s, p) => s + (p.budget ?? 0), 0);
+                          return sum > 0 ? formatRuMoney(sum) : "—";
+                        }
+                        return row.budget != null ? formatRuMoney(row.budget) : "—";
+                      })()}
                     </td>
                   </tr>
                 );
@@ -1018,6 +1054,20 @@ export function PanelScreen() {
                       className={`${fieldClass} mt-1 font-mono text-[13px]`}
                     />
                   </label>
+                </div>
+
+                <div>
+                  <label className="block text-xs uppercase tracking-wider text-app-fg/55">Сотрудник</label>
+                  <select
+                    value={formEmployeeId}
+                    onChange={(e) => setFormEmployeeId(e.target.value)}
+                    className={`${fieldClass} mt-1 ${selectNativeChevronPad}`}
+                  >
+                    <option value="">Без сотрудника</option>
+                    {employees.map((e) => (
+                      <option key={e.id} value={e.id}>{e.fullName}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex flex-wrap gap-2 pt-1">

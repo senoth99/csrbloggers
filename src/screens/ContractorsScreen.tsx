@@ -19,6 +19,7 @@ import {
   CONTRACTOR_SIZE_CATEGORY_LABELS,
   CONTRACTOR_SIZE_CATEGORIES,
   CONTRACTOR_STATUS_LABELS,
+  type Integration,
 } from "@/types/panel-data";
 import {
   primaryActionButtonClass,
@@ -71,10 +72,20 @@ export function ContractorsScreen() {
   }, [integrations]);
 
   const rating10ByContractorId = useMemo(() => {
+    const intsByContractor = new Map<string, Integration[]>();
+    for (const i of integrations) {
+      const arr = intsByContractor.get(i.contractorId) ?? [];
+      arr.push(i);
+      intsByContractor.set(i.contractorId, arr);
+    }
+    const nItemsByContractor = new Map<string, number>();
+    for (const it of contractorItems) {
+      nItemsByContractor.set(it.contractorId, (nItemsByContractor.get(it.contractorId) ?? 0) + 1);
+    }
     const map = new Map<string, number>();
     for (const c of contractors) {
-      const ints = integrations.filter((i) => i.contractorId === c.id);
-      const nItems = contractorItems.filter((it) => it.contractorId === c.id).length;
+      const ints = intsByContractor.get(c.id) ?? [];
+      const nItems = nItemsByContractor.get(c.id) ?? 0;
       map.set(c.id, computeContractorRating10(ints, nItems));
     }
     return map;
@@ -250,7 +261,7 @@ export function ContractorsScreen() {
 
   const onContractorSort = (key: string) => toggleSort(key as ContractorSortKey);
 
-  const filterField = `min-h-[42px] w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2 ${selectNativeChevronPad}`;
+  const filterField = `min-h-[42px] w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-[11px] text-app-fg outline-none ring-app-accent/35 focus:ring-2 ${selectNativeChevronPad}`;
 
   return (
     <div className="w-full max-w-full space-y-4">
@@ -281,8 +292,8 @@ export function ContractorsScreen() {
               type="search"
               value={tableSearch}
               onChange={(e) => setTableSearch(e.target.value)}
-              placeholder="Поиск по ФИО, нику, вирусности, статусу, числу интеграций…"
-              className="w-full border border-app-fg/15 bg-app-bg py-2.5 pl-9 pr-3 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
+              placeholder="Поиск по контактному лицу, нику, вирусности, статусу, числу интеграций…"
+              className="w-full border border-app-fg/15 bg-app-bg py-2.5 pl-9 pr-3 text-xs text-app-fg outline-none ring-app-accent/35 focus:ring-2"
               aria-label="Поиск в таблице"
             />
           </label>
@@ -306,7 +317,8 @@ export function ContractorsScreen() {
       )}
 
       {contractors.length > 0 && filteredContractors.length > 0 && (
-        <div className="overflow-x-auto bg-app-bg">
+        <div className="relative">
+          <div className="overflow-x-auto bg-app-bg">
           <table className="w-full min-w-[1100px] border-separate border-spacing-0 text-left text-[11px] leading-tight text-app-fg sm:text-xs">
             <thead>
               <tr
@@ -328,7 +340,7 @@ export function ContractorsScreen() {
                   onSort={onContractorSort}
                   className="min-w-[200px] px-4 py-2.5"
                 >
-                  ФИО
+                  Контактное лицо
                 </SortableTh>
                 <SortableTh
                   columnKey="rating"
@@ -446,6 +458,8 @@ export function ContractorsScreen() {
               })}
             </tbody>
           </table>
+          </div>
+          <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-app-bg to-transparent" aria-hidden="true" />
         </div>
       )}
 
@@ -475,7 +489,7 @@ export function ContractorsScreen() {
 
             <form onSubmit={handleAdd} className="space-y-3">
               <label className="block text-xs uppercase tracking-wider text-app-fg/55">
-                ФИО
+                Контактное лицо
                 <input
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}

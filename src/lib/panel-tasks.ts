@@ -19,7 +19,7 @@ export interface PanelTask {
   title: string;
   detail: string;
   href: string;
-  /** Для задач по интеграции — переход в карточку `/panel/[id]` */
+  /** Для задач по интеграции — переход в карточку `/integrations/[id]` */
   integrationId?: string;
   employeeId?: string;
   /** ISO конец дня дедлайна */
@@ -133,7 +133,7 @@ export function buildOpenTasks(params: {
       kind: "integration_reach",
       title: "Ввести охваты по интеграции",
       detail: row.title?.trim() || "Интеграция",
-      href: `/panel/${row.id}`,
+      href: `/integrations/${row.id}`,
       integrationId: row.id,
       employeeId: row.assignedEmployeeId,
       deadlineIso,
@@ -146,7 +146,11 @@ export function buildOpenTasks(params: {
     if (!isPublishedIntegrationStatus(row.status)) continue;
     const assignee = row.assignedEmployeeId?.trim();
     if (!assignee) continue;
-    const releaseMs = localReleaseDateTimeMs(row.releaseDate, row.releaseTime);
+    let releaseMs = localReleaseDateTimeMs(row.releaseDate, row.releaseTime);
+    if (releaseMs === null && row.releaseDate?.trim()) {
+      const d = parseYmdLocal(row.releaseDate.trim());
+      if (d) releaseMs = startOfLocalDay(d).getTime();
+    }
     if (releaseMs === null || now.getTime() < releaseMs) continue;
     const key = integrationReleaseVerifyTaskKey(row.id);
     if (params.completedKeys.has(key)) continue;
@@ -160,7 +164,7 @@ export function buildOpenTasks(params: {
       kind: "integration_release_verify",
       title: "Убедиться в выходе интеграции",
       detail: `${row.title?.trim() || "Интеграция"} · план: ${planLine}`,
-      href: `/panel/${row.id}`,
+      href: `/integrations/${row.id}`,
       integrationId: row.id,
       employeeId: assignee,
       deadlineIso,
