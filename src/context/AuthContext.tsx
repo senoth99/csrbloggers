@@ -75,8 +75,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authBackendError, setAuthBackendError] = useState<string | null>(null);
 
   const refreshUsers = useCallback(async () => {
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 20_000);
     try {
-      const res = await fetch("/api/auth/me", { credentials: "include" });
+      const res = await fetch("/api/auth/me", {
+        credentials: "include",
+        signal: controller.signal,
+      });
       if (res.status === 503) {
         const j = (await res.json().catch(() => ({}))) as { error?: string };
         setAuthBackendError(j.error ?? "База данных не настроена.");
@@ -103,9 +108,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setCurrentLogin(normalizeUsername(data.me.login));
     } catch (e) {
       console.error("[auth] refresh failed", e);
-      setAuthBackendError("Не удалось связаться с сервером.");
+      const aborted = e instanceof DOMException && e.name === "AbortError";
+      setAuthBackendError(
+        aborted ? "Сервер не отвечает (таймаут). Проверьте, что панель запущена." : "Не удалось связаться с сервером.",
+      );
       setUsers([]);
       setCurrentLogin(null);
+    } finally {
+      window.clearTimeout(timeout);
     }
   }, []);
 

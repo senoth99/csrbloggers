@@ -21,9 +21,19 @@ fi
 export NODE_ENV=production
 npm run build
 
-# next.config: output standalone — запуск через server.js, не next start
-if [ -f .next/standalone/server.js ]; then
-  exec node .next/standalone/server.js
+STANDALONE="${ROOT}/.next/standalone"
+if [ -f "${STANDALONE}/server.js" ]; then
+  # Без этого в браузере нет JS/CSS → вечная «Загрузка…» (см. Next.js output standalone).
+  mkdir -p "${STANDALONE}/.next/static" "${STANDALONE}/public"
+  cp -R "${ROOT}/.next/static/." "${STANDALONE}/.next/static/"
+  cp -R "${ROOT}/public/." "${STANDALONE}/public/"
+  if [ -f "${ROOT}/.env" ]; then
+    cp "${ROOT}/.env" "${STANDALONE}/.env"
+  fi
+  cd "${STANDALONE}"
+  exec node server.js
 fi
+
 echo "[deploy] WARN: .next/standalone/server.js не найден — fallback на next start"
+cd "${ROOT}"
 exec npx next start -H 0.0.0.0 -p "${PORT}"
