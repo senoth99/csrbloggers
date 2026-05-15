@@ -13,29 +13,16 @@ export DATABASE_URL="file:${DB_FILE}"
 
 mkdir -p "$DB_DIR"
 
-LITE=0
-for arg in "$@"; do
-  case "$arg" in
-    --lite | -l) LITE=1 ;;
-  esac
-done
-
-if [ "$LITE" = "1" ]; then
-  exec "${ROOT}/deploy-lite.sh"
-fi
-
-# Полная сборка на сервере — нужно ~1–2 ГБ RAM или swap (см. scripts/server-swap.sh).
-export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=768}"
-
-echo "[deploy] npm ci…"
+# Сначала ставим все зависимости (в т.ч. Tailwind/PostCSS из devDependencies),
+# затем production-сборка.
 npm ci
 
 echo "[deploy] prisma db push → ${DB_FILE}"
 npx prisma db push
 
-echo "[deploy] next build (тяжёлая операция)…"
 npm run build
 
+# Standalone: движок Prisma + schema (SQLite-файл остаётся в ${DB_FILE})
 STANDALONE="${ROOT}/.next/standalone"
 if [ -d "$STANDALONE" ]; then
   mkdir -p "${STANDALONE}/prisma"
@@ -50,4 +37,9 @@ if [ -d "$STANDALONE" ]; then
   fi
 fi
 
-exec "${ROOT}/scripts/start-panel.sh"
+# next.config: output standalone — запуск из корня репозитория (cwd = PANEL_ROOT)
+if [ -f .next/standalone/server.js ]; then
+  exec env PANEL_ROOT="$ROOT" DATABASE_URL="$DATABASE_URL" node .next/standalone/server.js
+fi
+echo "[deploy] WARN: .next/standalone/server.js не найден — fallback на next start"
+exec env PANEL_ROOT="$ROOT" DATABASE_URL="$DATABASE_URL" npx next start -H 0.0.0.0 -p "${PORT}"
