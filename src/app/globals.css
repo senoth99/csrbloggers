@@ -75,3 +75,70 @@ a:active {
 .login-root .login-busy-dot {
   border-radius: 9999px !important;
 }
+
+/* Фон рабочей области (main): сетка + мягкое свечение акцента, без хедера и сайдбара */
+.app-main-surface {
+  background-color: #000000;
+  background-image:
+    radial-gradient(ellipse 90% 55% at 8% -5%, rgba(13, 92, 50, 0.18) 0%, transparent 58%),
+    radial-gradient(ellipse 70% 45% at 100% 105%, rgba(13, 92, 50, 0.11) 0%, transparent 52%),
+    radial-gradient(ellipse 55% 40% at 50% 50%, rgba(255, 255, 255, 0.02) 0%, transparent 70%),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0,
+      transparent 47px,
+      rgba(255, 255, 255, 0.028) 47px,
+      rgba(255, 255, 255, 0.028) 48px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0,
+      transparent 47px,
+      rgba(255, 255, 255, 0.028) 47px,
+      rgba(255, 255, 255, 0.028) 48px
+    );
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 100%,
+    48px 48px,
+    48px 48px;
+  background-attachment: local;
+}
+
+@media (min-width: 768px) {
+  .app-main-surface {
+    background-image:
+      radial-gradient(ellipse 90% 55% at 8% -5%, rgba(13, 92, 50, 0.18) 0%, transparent 58%),
+      radial-gradient(ellipse 70% 45% at 100% 105%, rgba(13, 92, 50, 0.11) 0%, transparent 52%),
+      radial-gradient(ellipse 55% 40% at 50% 50%, rgba(255, 255, 255, 0.02) 0%, transparent 70%),
+      repeating-linear-gradient(
+        105deg,
+        transparent 0,
+        transparent 39px,
+        rgba(255, 255, 255, 0.022) 39px,
+        rgba(255, 255, 255, 0.022) 40px
+      ),
+      repeating-linear-gradient(
+        0deg,
+        transparent 0,
+        transparent 47px,
+        rgba(255, 255, 255, 0.026) 47px,
+        rgba(255, 255, 255, 0.026) 48px
+      ),
+      repeating-linear-gradient(
+        90deg,
+        transparent 0,
+        transparent 47px,
+        rgba(255, 255, 255, 0.026) 47px,
+        rgba(255, 255, 255, 0.026) 48px
+      );
+    background-size:
+      100% 100%,
+      100% 100%,
+      100% 100%,
+      56px 56px,
+      48px 48px,
+      48px 48px;
+  }
+}

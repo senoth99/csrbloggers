@@ -169,6 +169,17 @@ export const CONTRACTOR_STATUS_LABELS: Record<ContractorStatus, string> = {
   paused: "Пауза",
 };
 
+/** Обновить статус контрагента в массиве (для синхронизации с интеграциями). */
+export function contractorsWithStatus(
+  contractors: Contractor[],
+  contractorId: string,
+  status: ContractorStatus,
+): Contractor[] {
+  const id = contractorId.trim();
+  if (!id) return contractors;
+  return contractors.map((c) => (c.id === id ? { ...c, status } : c));
+}
+
 export const DELIVERY_STATUS_LABELS: Record<DeliveryStatus, string> = {
   created: "Создано",
   in_transit: "В пути",

@@ -7,15 +7,16 @@ import { usePromocodesCtx } from "@/context/PromocodesContext";
 import {
   DELIVERY_STATUS_LABELS,
   INTEGRATION_STATUS_LABELS,
-  type IntegrationStatus,
 } from "@/types/panel-data";
 import {
   aggregateCpmForMonth,
-  countBy,
+  DASHBOARD_EMPTY_VALUE,
   deliveriesCreatedInMonth,
   formatYearMonthString,
   integrationReachByCalendarDayInMonth,
-  integrationsCreatedInMonth,
+  integrationsHaveAnyBudget,
+  integrationsHaveAnyPromoActivations,
+  integrationsHaveAnyReach,
   integrationsPublishedInMonth,
   monthOverMonthTrend,
   monthOverMonthTrendCpm,
@@ -30,15 +31,12 @@ import { downloadUtf8Csv, rowsToCsv } from "@/lib/csv-export";
 import { DashboardGeneralReportTable } from "@/components/DashboardGeneralReportTable";
 import { DashboardTopBloggers } from "@/components/dashboard/DashboardTopBloggers";
 import { DashboardPromocodesPanel } from "@/components/dashboard/DashboardPromocodesPanel";
-import { DashboardIntegrationsMonthTable } from "@/components/dashboard/DashboardIntegrationsMonthTable";
-import { DashboardDeliveriesSummary } from "@/components/dashboard/DashboardDeliveriesSummary";
-import { DashboardEmployeesSummary } from "@/components/dashboard/DashboardEmployeesSummary";
 import { useDashboardMonth } from "@/hooks/useDashboardMonth";
 import {
   DashboardChartSection,
-  DistributionBars,
   StatCard,
   crmPageHeaderRowClass,
+  dashboardHeaderActionsRowClass,
   crmPageTitleClass,
   dashboardMonthInputClass,
   dashboardMonthNavButtonClass,
@@ -54,7 +52,6 @@ export function DashboardScreen() {
     contractors,
     integrations,
     deliveries,
-    employees,
     socialOptions,
     recordPromocodeSnapshot,
     promocodeSnapshots,
@@ -63,13 +60,6 @@ export function DashboardScreen() {
   const { ym, setMonth, monthInputValue } = useDashboardMonth();
 
   const ymPrev = useMemo(() => shiftYearMonth(ym, -1), [ym]);
-
-  useEffect(() => {
-    const hash = window.location.hash.slice(1);
-    if (!hash) return;
-    const el = document.getElementById(hash);
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, []);
 
   useEffect(() => {
     if (!promoFetchedAt || promoItems.length === 0) return;
@@ -111,11 +101,6 @@ export function DashboardScreen() {
     return m;
   }, [contractors]);
 
-  const integrationsMonth = useMemo(
-    () => integrationsCreatedInMonth(integrations, ym),
-    [integrations, ym],
-  );
-
   const pubMonth = useMemo(
     () => integrationsPublishedInMonth(integrations, ym),
     [integrations, ym],
@@ -154,26 +139,6 @@ export function DashboardScreen() {
     [pubMonth],
   );
 
-  const intBarEntries = useMemo(() => {
-    const raw = countBy(integrationsMonth.map((i) => i.status));
-    return (Object.keys(INTEGRATION_STATUS_LABELS) as IntegrationStatus[]).map((k) => ({
-      key: k,
-      label: INTEGRATION_STATUS_LABELS[k],
-      value: raw[k] ?? 0,
-    }));
-  }, [integrationsMonth]);
-
-  const platformBars = useMemo(() => {
-    const raw = countBy(integrationsMonth.map((i) => i.socialNetworkId));
-    return Object.entries(raw)
-      .map(([id, value]) => ({
-        key: id,
-        label: socialOptions.find((o) => o.id === id)?.label ?? id,
-        value,
-      }))
-      .sort((a, b) => b.value - a.value);
-  }, [integrationsMonth, socialOptions]);
-
   function handleExportThisMonth() {
     const month = ym;
     const intRows = integrationsPublishedInMonth(integrations, month).map((i) => [
@@ -190,18 +155,18 @@ export function DashboardScreen() {
       i.budget != null ? String(i.budget) : "",
     ]);
     const delRows = deliveriesCreatedInMonth(deliveries, month).map((d) => [
-        "доставка",
-        d.id,
-        d.trackNumber,
-        DELIVERY_STATUS_LABELS[d.status],
-        "",
-        d.createdAt ?? "",
-        contractorName.get(d.contractorId) ?? d.contractorId,
-        "",
-        "",
-        "",
-        "",
-      ]);
+      "доставка",
+      d.id,
+      d.trackNumber,
+      DELIVERY_STATUS_LABELS[d.status],
+      "",
+      d.createdAt ?? "",
+      contractorName.get(d.contractorId) ?? d.contractorId,
+      "",
+      "",
+      "",
+      "",
+    ]);
     const header = [
       "Тип записи",
       "ID",
@@ -224,7 +189,7 @@ export function DashboardScreen() {
       <div className={crmPageHeaderRowClass}>
         <h1 className={crmPageTitleClass}>Обзор</h1>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className={dashboardHeaderActionsRowClass}>
           <div className="flex min-w-0 flex-col gap-1">
             <label
               htmlFor="dashboard-month"
@@ -277,39 +242,62 @@ export function DashboardScreen() {
       </div>
 
       <DashboardChartSection title="Ключевые показатели">
-        <p className="mb-4 text-xs leading-relaxed text-app-fg/50">
-          KPI ниже (интеграции, охваты, бюджет, CPM) — по{" "}
-          <span className="text-app-fg/70">дате выхода</span> (releaseDate). Блоки
-          «Создано в месяце» — по дате создания записи (createdAt). Δ промокодов
-          (Casher API) — из снапшотов в localStorage этого браузера.
-        </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
           <StatCard
             label="Интеграции (выход в месяце)"
-            value={kpi.count}
+            value={kpi.count > 0 ? kpi.count : DASHBOARD_EMPTY_VALUE}
             accent="accent"
-            trend={monthOverMonthTrend(kpi.count, kpi.countPrev)}
+            trend={
+              kpi.count > 0
+                ? monthOverMonthTrend(kpi.count, kpi.countPrev)
+                : undefined
+            }
           />
           <StatCard
             label="Охваты"
-            value={nfKpi.format(kpi.reach)}
-            trend={monthOverMonthTrend(kpi.reach, kpi.reachPrev)}
+            value={
+              integrationsHaveAnyReach(pubMonth)
+                ? nfKpi.format(kpi.reach)
+                : DASHBOARD_EMPTY_VALUE
+            }
+            trend={
+              integrationsHaveAnyReach(pubMonth)
+                ? monthOverMonthTrend(kpi.reach, kpi.reachPrev)
+                : undefined
+            }
           />
           <StatCard
             label="Бюджет"
-            value={kpi.budget > 0 ? `${formatRuMoney(kpi.budget)} ₽` : "—"}
-            trend={monthOverMonthTrend(kpi.budget, kpi.budgetPrev)}
+            value={
+              integrationsHaveAnyBudget(pubMonth)
+                ? `${formatRuMoney(kpi.budget)} ₽`
+                : DASHBOARD_EMPTY_VALUE
+            }
+            trend={
+              integrationsHaveAnyBudget(pubMonth)
+                ? monthOverMonthTrend(kpi.budget, kpi.budgetPrev)
+                : undefined
+            }
           />
           <StatCard
             label="CPM"
-            value={kpi.cpm != null ? `${formatRuCpm(kpi.cpm)} ₽` : "—"}
-            trend={monthOverMonthTrendCpm(kpi.cpm, kpi.cpmPrev)}
+            value={
+              kpi.cpm != null ? `${formatRuCpm(kpi.cpm)} ₽` : DASHBOARD_EMPTY_VALUE
+            }
+            trend={
+              kpi.cpm != null
+                ? monthOverMonthTrendCpm(kpi.cpm, kpi.cpmPrev)
+                : undefined
+            }
             trendPolarity="inverse"
           />
           <StatCard
             label="Активаций (ручной ввод)"
-            value={nfKpi.format(manualPromoActivations)}
-            hint="Сумма поля promoActivations на интеграциях с выходом в месяце. Не путать с блоком «Промокоды (Δ)» — там Casher API."
+            value={
+              integrationsHaveAnyPromoActivations(pubMonth)
+                ? nfKpi.format(manualPromoActivations)
+                : DASHBOARD_EMPTY_VALUE
+            }
           />
         </div>
       </DashboardChartSection>
@@ -327,37 +315,6 @@ export function DashboardScreen() {
           promoDeltaByCodeKey={promoDeltaByCodeKey}
         />
       </div>
-
-      <section id="integrations" className={`scroll-mt-6 ${dashboardPageStackClass}`}>
-        <DashboardIntegrationsMonthTable
-          ym={ym}
-          integrations={integrations}
-          socialOptions={socialOptions}
-          contractorName={contractorName}
-        />
-
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-          <DashboardChartSection title="Создано в месяце · статусы">
-            <DistributionBars entries={intBarEntries} />
-          </DashboardChartSection>
-          <DashboardChartSection title="Создано в месяце · площадки">
-            <DistributionBars entries={platformBars} />
-          </DashboardChartSection>
-        </div>
-      </section>
-
-      <DashboardDeliveriesSummary
-        ym={ym}
-        deliveries={deliveries}
-        contractors={contractors}
-      />
-
-      <DashboardEmployeesSummary
-        ym={ym}
-        employees={employees}
-        integrations={integrations}
-        deliveries={deliveries}
-      />
 
       <DashboardGeneralReportTable ym={ym} integrations={integrations} />
     </div>

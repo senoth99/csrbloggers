@@ -33,7 +33,7 @@ export function DashboardEmployeesSummary({
   );
 
   return (
-    <section id="employees" className="scroll-mt-6">
+    <section id="employees" className="scroll-mt-24">
       <DashboardChartSection
         title="Сотрудники"
         action={

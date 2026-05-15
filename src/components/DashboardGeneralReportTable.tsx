@@ -24,18 +24,30 @@ import { compareNumbers, compareStringsRu } from "@/lib/table-sort";
 const nf = new Intl.NumberFormat("ru-RU");
 const nfReach = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 
-/** Единая сетка: площадка + 5 метрик; вертикальные линии не используем */
-const rowGridClass =
-  "grid grid-cols-[minmax(7.5rem,10rem)_repeat(5,minmax(4rem,1fr))] gap-x-3 gap-y-1 sm:gap-x-5";
-
-/** Горизонтальные разделители строк отчёта (чуть заметнее общего listDivide) */
-const reportRowDivideClass = "divide-y divide-app-fg/10";
+/** Горизонтальные разделители строк отчёта */
+const reportRowDivideClass = "divide-y divide-app-fg/[0.07]";
 
 const headerLabelClass =
-  "text-[10px] font-semibold uppercase tracking-[0.16em] text-app-fg/42";
+  "text-[10px] font-semibold uppercase tracking-[0.16em] text-app-fg/38";
+
+const platformLabelClass =
+  "text-[15px] font-semibold leading-snug text-app-fg/68";
 
 const cellValueClass =
-  "text-sm font-semibold tabular-nums text-app-fg sm:text-[15px]";
+  "text-sm font-semibold tabular-nums text-app-fg/55 sm:text-[15px]";
+
+const totalsLabelClass =
+  "text-[15px] font-bold uppercase tracking-[0.1em] text-app-fg/72";
+
+const totalsRowClass = "bg-app-accent/[0.07]";
+
+/** Единая сетка: площадка + 5 метрик (последние колонки шире под длинные заголовки) */
+const rowGridClass =
+  "grid grid-cols-[minmax(8.5rem,11rem)_repeat(3,minmax(5.25rem,1fr))_minmax(6.75rem,1.1fr)_minmax(8.5rem,1.2fr)] gap-x-4 gap-y-1 sm:gap-x-6";
+
+const metricHeaderClass = `${headerLabelClass} text-right whitespace-nowrap`;
+
+const metricCellClass = `${cellValueClass} text-right`;
 
 function CellWithTrend({
   children,
@@ -52,7 +64,7 @@ function CellWithTrend({
   const downClass =
     trendPolarity === "inverse" ? "text-emerald-500" : "text-red-500";
   return (
-    <div className={`${cellValueClass} flex min-w-0 items-center gap-0.5`}>
+    <div className={`${metricCellClass} flex min-w-0 items-center justify-end gap-0.5`}>
       <span className="min-w-0">{children}</span>
       {trend === "up" ? (
         <ArrowUp className={`h-3 w-3 shrink-0 ${upClass}`} strokeWidth={2.5} aria-hidden />
@@ -252,8 +264,8 @@ export function DashboardGeneralReportTable({ ym, integrations }: Props) {
   return (
     <DashboardChartSection title="Общий отчёт">
       <div className="-mx-1 overflow-x-auto px-1">
-        <div className="min-w-[34rem] sm:min-w-0">
-          <div className={`${rowGridClass} border-b border-app-fg/10 pb-3`}>
+        <div className="min-w-[42rem] sm:min-w-0">
+          <div className={`${rowGridClass} border-b border-app-fg/[0.07] pb-3`}>
             <div className={headerLabelClass}>
               <SortHeaderButton
                 active={sortKey === "label"}
@@ -263,51 +275,51 @@ export function DashboardGeneralReportTable({ ym, integrations }: Props) {
                 Площадка
               </SortHeaderButton>
             </div>
-            <div className={`${headerLabelClass} text-left`}>
+            <div className={metricHeaderClass}>
               <SortHeaderButton
                 active={sortKey === "budget"}
                 sortDir={sortDir}
-                align="left"
+                align="right"
                 onClick={() => toggleSort("budget")}
               >
                 Бюджет
               </SortHeaderButton>
             </div>
-            <div className={`${headerLabelClass} text-left`}>
+            <div className={metricHeaderClass}>
               <SortHeaderButton
                 active={sortKey === "reach"}
                 sortDir={sortDir}
-                align="left"
+                align="right"
                 onClick={() => toggleSort("reach")}
               >
                 Охваты
               </SortHeaderButton>
             </div>
-            <div className={`${headerLabelClass} text-left`}>
+            <div className={metricHeaderClass}>
               <SortHeaderButton
                 active={sortKey === "cpm"}
                 sortDir={sortDir}
-                align="left"
+                align="right"
                 onClick={() => toggleSort("cpm")}
               >
                 CPM
               </SortHeaderButton>
             </div>
-            <div className={`${headerLabelClass} text-left leading-tight`}>
+            <div className={metricHeaderClass}>
               <SortHeaderButton
                 active={sortKey === "published"}
                 sortDir={sortDir}
-                align="left"
+                align="right"
                 onClick={() => toggleSort("published")}
               >
                 Опубликовано
               </SortHeaderButton>
             </div>
-            <div className={`${headerLabelClass} text-left leading-tight`}>
+            <div className={metricHeaderClass}>
               <SortHeaderButton
                 active={sortKey === "agreements"}
                 sortDir={sortDir}
-                align="left"
+                align="right"
                 onClick={() => toggleSort("agreements")}
               >
                 Договорённости
@@ -321,10 +333,8 @@ export function DashboardGeneralReportTable({ ym, integrations }: Props) {
                 key={row.id}
                 className={`${rowGridClass} items-center py-3.5 sm:py-4`}
               >
-                <div className="text-[15px] font-semibold leading-snug text-app-fg">
-                  {row.label}
-                </div>
-                <div className={cellValueClass}>
+                <div className={platformLabelClass}>{row.label}</div>
+                <div className={metricCellClass}>
                   {row.hasBudget ? `${formatRuMoney(row.budget)} ₽` : "—"}
                 </div>
                 <CellWithTrend trend={row.trendReach}>
@@ -343,12 +353,10 @@ export function DashboardGeneralReportTable({ ym, integrations }: Props) {
             ))}
 
             <div
-              className={`${rowGridClass} items-center bg-app-accent/12 px-3 py-4 sm:px-4 sm:py-5`}
+              className={`${rowGridClass} items-center py-4 sm:py-5 ${totalsRowClass}`}
             >
-              <div className="text-[15px] font-bold uppercase tracking-[0.1em] text-app-fg">
-                Итого
-              </div>
-              <div className={cellValueClass}>
+              <div className={totalsLabelClass}>Итого</div>
+              <div className={metricCellClass}>
                 {totals.hasBudget ? `${formatRuMoney(totals.budget)} ₽` : "—"}
               </div>
               <CellWithTrend trend={totals.trendReach}>

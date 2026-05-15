@@ -16,7 +16,6 @@ import {
   DistributionBars,
   StatCard,
   dashboardPageStackClass,
-  dashboardSectionTitleClass,
 } from "@/screens/dashboard-shared";
 
 type Props = {
@@ -76,9 +75,7 @@ export function DashboardDeliveriesSummary({ ym, deliveries, contractors }: Prop
   );
 
   return (
-    <section id="deliveries" className={`scroll-mt-6 ${dashboardPageStackClass}`}>
-      <h2 className={dashboardSectionTitleClass}>Доставки</h2>
-
+    <section className={dashboardPageStackClass}>
       <DashboardChartSection title="Сводка за месяц">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <StatCard
@@ -105,9 +102,6 @@ export function DashboardDeliveriesSummary({ ym, deliveries, contractors }: Prop
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <DashboardChartSection title="Статусы новых треков">
-          <p className="mb-4 text-xs text-app-fg/45">
-            По доставкам, созданным в выбранном месяце
-          </p>
           <DistributionBars entries={statusBars} />
         </DashboardChartSection>
         <DashboardChartSection title="Топ по новым трекам">

@@ -17,6 +17,7 @@ import {
   tableBodyRowBorderClass,
   tableHeadRowBorderClass,
 } from "@/screens/dashboard-shared";
+import { CreateEmployeeAccountButton } from "@/components/admin/CreateEmployeeAccountButton";
 import { usePanelData } from "@/context/PanelDataContext";
 
 type AdminUserSortKey = "username" | "role";
@@ -95,18 +96,12 @@ export function AdminScreen() {
     <div className="space-y-8">
       <div>
         <h1 className={crmPageTitleClass}>Админка</h1>
-        <p className="mt-2 text-sm text-app-fg/55">
-          Справочники и список учётных записей панели (логин и роль)
-        </p>
       </div>
 
       <section className="border border-app-fg/15 bg-app-bg p-4 md:p-5">
         <h2 className="text-sm font-semibold uppercase tracking-[0.15em] text-app-fg">
           Ниши контрагентов
         </h2>
-        <p className="mt-1 text-xs text-app-fg/55">
-          Справочник для выбора ниши в карточке контрагента. Можно оставить пустым.
-        </p>
         <form onSubmit={handleAddNiche} className="mt-4 flex flex-col gap-2 sm:flex-row">
           <input
             value={newNiche}
@@ -156,13 +151,12 @@ export function AdminScreen() {
       </section>
 
       <section className="border border-app-fg/15 bg-app-bg p-4 md:p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.15em] text-app-fg">
-          Доступы
-        </h2>
-        <p className="mt-1 text-xs text-app-fg/55">
-          Создание сотрудников (логин и пароль) — только суперадмин в дашборде «Сотрудники», кнопка «+ Аккаунт».
-          Логин суперадмина: <span className="text-app-fg">{SUPERADMIN_LOGIN}</span>.
-        </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.15em] text-app-fg">
+            Доступы
+          </h2>
+          <CreateEmployeeAccountButton className="w-full sm:w-auto" />
+        </div>
 
         <div className="mt-6 overflow-x-auto">
           <table className="w-full min-w-[480px] border-separate border-spacing-0 text-left text-sm text-app-fg">

@@ -799,10 +799,6 @@ function ContractorsScreenInner() {
                       Ещё площадка
                     </button>
                   </div>
-                  <p className="text-[11px] leading-snug text-app-fg/45">
-                    Необязательно. Укажите ссылку на профиль (https://… или домен). Пустые строки
-                    не сохраняются.
-                  </p>
                   {linkDrafts.length === 0 ? (
                     <button
                       type="button"
@@ -888,7 +884,7 @@ function ContractorsScreenInner() {
                 <input
                   value={viralityInput}
                   onChange={(e) => setViralityInput(e.target.value)}
-                  placeholder="Необязательно, произвольный текст"
+                  placeholder="Необязательно"
                   className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
                   autoComplete="off"
                 />

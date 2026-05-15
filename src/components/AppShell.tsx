@@ -114,7 +114,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <AppSidebar className="hidden md:flex" />
         <main
           id="app-main-content"
-          className="min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] pt-3 sm:px-4 sm:pt-4 md:px-6 md:pb-6 md:pt-6"
+          className="app-main-surface min-h-0 min-w-0 flex-1 overflow-y-auto px-3 pb-[calc(3.5rem+env(safe-area-inset-bottom,0px))] pt-3 sm:px-4 sm:pt-4 md:px-6 md:pb-6 md:pt-6"
         >
           {children}
         </main>

@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { usePanelData } from "@/context/PanelDataContext";
@@ -31,6 +32,7 @@ export function ContractorListModal({
 }: Props) {
   const { integrations, contractorItems } = usePanelData();
   const [query, setQuery] = useState("");
+  const [mounted, setMounted] = useState(false);
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const { onKeyDownTrap } = useDialogA11y(open, onClose, panelRef);
@@ -79,32 +81,40 @@ export function ContractorListModal({
   }, [filtered, integrationsByContractor, itemCountByContractor]);
 
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (!open) setQuery("");
   }, [open]);
 
-  if (!open) return null;
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open]);
 
-  return (
+  if (!mounted || !open) return null;
+
+  return createPortal(
     <div
-      className={`fixed inset-0 ${zIndexClass} flex items-center justify-center bg-black/75 px-4`}
+      className={`fixed inset-0 ${zIndexClass} flex items-center justify-center bg-black/75 px-4 py-8`}
       role="presentation"
       onClick={onClose}
     >
-      <div
-        className="absolute inset-0"
-        aria-hidden
-        inert
-      />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative w-full max-w-2xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6"
+        className="relative flex max-h-[min(85dvh,100%)] w-full max-w-2xl flex-col border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDownTrap}
       >
-        <div className="mb-4 flex items-start justify-between gap-3">
+        <div className="mb-4 flex shrink-0 items-start justify-between gap-3">
           <h3
             id={titleId}
             className="text-sm font-semibold uppercase tracking-[0.1em] text-app-fg"
@@ -125,10 +135,10 @@ export function ContractorListModal({
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Поиск по контактному лицу или нику..."
-          className={`${searchField} mb-4`}
+          className={`${searchField} mb-4 shrink-0`}
         />
 
-        <div className="max-h-[60vh] overflow-y-auto border border-app-fg/15">
+        <div className="min-h-0 flex-1 overflow-y-auto border border-app-fg/15">
           {filtered.length === 0 ? (
             <p className="px-4 py-8 text-sm text-app-fg/55">Ничего не найдено.</p>
           ) : (
@@ -157,6 +167,7 @@ export function ContractorListModal({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

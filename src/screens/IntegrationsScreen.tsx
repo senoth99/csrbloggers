@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Plus, Search, ChevronDown, X } from "lucide-react";
@@ -218,13 +217,12 @@ export function IntegrationsScreen() {
   useEffect(() => {
     if (!isAddOpen) return;
     setContractorId((prev) => prev || contractors[0]?.id || "");
-    setSocialNetworkId((prev) => prev || socialOptions[0]?.id || "");
-  }, [isAddOpen, contractors, socialOptions]);
+  }, [isAddOpen, contractors]);
 
   function openAddModal() {
     setTitle("");
     setContractorId(contractors[0]?.id ?? "");
-    setSocialNetworkId(socialOptions[0]?.id ?? "");
+    setSocialNetworkId("");
     setStatus("draft");
     setReleaseDate("");
     setReleaseTime("");
@@ -246,7 +244,14 @@ export function IntegrationsScreen() {
     e.preventDefault();
     setAddFormError(null);
     const titleTrim = title.trim();
-    if (!contractorId.trim() || !socialNetworkId.trim()) return;
+    if (!contractorId.trim()) {
+      setAddFormError("Выберите контрагента.");
+      return;
+    }
+    if (!socialNetworkId.trim()) {
+      setAddFormError("Выберите площадку.");
+      return;
+    }
     if (!titleTrim) {
       setAddFormError("Укажите заголовок.");
       return;
@@ -1330,11 +1335,6 @@ export function IntegrationsScreen() {
               <Plus className="h-4 w-4" strokeWidth={1.5} />
               Создать первую интеграцию
             </button>
-          ) : isAdmin && contractors.length === 0 ? (
-            <Link href="/contractors" className={primaryActionButtonClass}>
-              <Plus className="h-4 w-4" strokeWidth={1.5} />
-              Создать первого контрагента
-            </Link>
           ) : !isAdmin ? (
             <p className="text-xs text-app-fg/45">Попросите администратора создать интеграцию.</p>
           ) : null}
@@ -1426,6 +1426,7 @@ export function IntegrationsScreen() {
                       required
                       className={`${fieldClass} mt-1 ${selectNativeChevronPad}`}
                     >
+                      <option value="">Выберите площадку</option>
                       {socialOptions.map((o) => (
                         <option key={o.id} value={o.id}>
                           {o.label}
@@ -1575,6 +1576,7 @@ export function IntegrationsScreen() {
         onClose={() => setIsContractorPickerOpen(false)}
         contractors={contractors}
         onPick={setContractorId}
+        zIndexClass="z-[70]"
       />
     </div>
   );

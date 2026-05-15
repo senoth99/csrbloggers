@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { hashPassword } from "@/lib/auth-password";
 import { getSessionUser, isDatabaseConfigured } from "@/lib/auth-session-prisma";
-import { normalizeUsername, SUPERADMIN_LOGIN } from "@/lib/panel-auth-utils";
+import {
+  isPanelAdminRole,
+  normalizeUsername,
+  SUPERADMIN_LOGIN,
+} from "@/lib/panel-auth-utils";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(request: Request) {
@@ -10,7 +14,7 @@ export async function POST(request: Request) {
   }
 
   const actor = await getSessionUser();
-  if (!actor || actor.role !== "superadmin" || normalizeUsername(actor.login) !== SUPERADMIN_LOGIN) {
+  if (!actor || !isPanelAdminRole(actor.role)) {
     return NextResponse.json({ error: "Недостаточно прав." }, { status: 403 });
   }
 
@@ -57,7 +61,7 @@ export async function DELETE(request: Request) {
   }
 
   const actor = await getSessionUser();
-  if (!actor || actor.role !== "superadmin" || normalizeUsername(actor.login) !== SUPERADMIN_LOGIN) {
+  if (!actor || !isPanelAdminRole(actor.role)) {
     return NextResponse.json({ error: "Недостаточно прав." }, { status: 403 });
   }
 
@@ -68,6 +72,14 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: "Некорректный логин." }, { status: 400 });
   }
 
-  await prisma.user.deleteMany({ where: { login: loginNorm } });
+  const target = await prisma.user.findUnique({ where: { login: loginNorm } });
+  if (!target) {
+    return NextResponse.json({ ok: true });
+  }
+  if (target.role === "superadmin") {
+    return NextResponse.json({ error: "Нельзя удалить суперадмина." }, { status: 403 });
+  }
+
+  await prisma.user.delete({ where: { login: loginNorm } });
   return NextResponse.json({ ok: true });
 }

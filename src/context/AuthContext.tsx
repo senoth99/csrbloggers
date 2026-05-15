@@ -9,7 +9,11 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { normalizeUsername, SUPERADMIN_LOGIN } from "@/lib/panel-auth-utils";
+import {
+  isPanelAdminRole,
+  normalizeUsername,
+  SUPERADMIN_LOGIN,
+} from "@/lib/panel-auth-utils";
 import type { PanelUserPublic } from "@/types/panel-auth-api";
 
 export type UserRole = "superadmin" | "admin" | "user";
@@ -166,9 +170,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       employeeId?: string;
     }): Promise<boolean> => {
       const actor = normalizeUsername(currentLogin ?? "");
-      if (actor !== SUPERADMIN_LOGIN) return false;
       const self = users.find((x) => normalizeUsername(x.login) === actor);
-      if (!self || self.role !== "superadmin") return false;
+      if (!self || !isPanelAdminRole(self.role)) return false;
 
       const loginNorm = normalizeUsername(input.login);
       if (!loginNorm || loginNorm === SUPERADMIN_LOGIN || !input.password.trim()) return false;

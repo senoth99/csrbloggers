@@ -593,6 +593,7 @@ function DeliveriesScreenInner() {
         </div>
       )}
 
+      {deliveries.length > 0 && (
       <div className="flex flex-col gap-2">
         <label className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-app-fg/35" />
@@ -690,8 +691,9 @@ function DeliveriesScreenInner() {
         </div>
         </div>
       </div>
+      )}
 
-      {mobileFiltersOpen ? (
+      {mobileFiltersOpen && deliveries.length > 0 ? (
         <div
           className="fixed inset-0 z-40 flex flex-col bg-app-bg md:hidden"
           role="dialog"
@@ -768,7 +770,7 @@ function DeliveriesScreenInner() {
         </div>
       ) : null}
 
-      <FilterChips chips={filterChips} />
+      {deliveries.length > 0 ? <FilterChips chips={filterChips} /> : null}
 
       {selectedIds.size > 0 ? (
         <div className="flex flex-wrap items-center gap-2 border border-app-fg/15 bg-app-fg/[0.03] px-3 py-2">
@@ -810,7 +812,7 @@ function DeliveriesScreenInner() {
       ) : null}
 
       {deliveries.length === 0 ? (
-        <div className="flex flex-col items-start gap-4 border border-dashed border-app-fg/15 px-4 py-8">
+        <div className="flex flex-col items-center gap-4 border border-dashed border-app-fg/15 px-4 py-12 text-center">
           <p className="text-sm text-app-fg/55">Доставок пока нет.</p>
           {isAdmin ? (
             <button

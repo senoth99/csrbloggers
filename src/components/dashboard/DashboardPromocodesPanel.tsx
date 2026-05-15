@@ -55,10 +55,6 @@ export function DashboardPromocodesPanel({ contractors, promoDeltaByCodeKey }: P
 
   return (
     <DashboardChartSection title="Промокоды (Δ за месяц)">
-      <p className="mb-1 text-xs text-app-fg/45">
-        Δ по Casher API и снапшотам в localStorage этого браузера. Один промокод у нескольких
-        контрагентов — одна дельта на код (не на пару контрагент+код).
-      </p>
       <p className="mb-4 text-xs font-medium tabular-nums text-app-fg/70">
         Casher API · всего: {nf.format(total)}
       </p>

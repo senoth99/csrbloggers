@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { SUPERADMIN_LOGIN, normalizeUsername, useAuth } from "@/context/AuthContext";
+import { normalizeUsername, useAuth } from "@/context/AuthContext";
 import type {
   AddDeliveryInput,
   AddIntegrationInput,
@@ -27,7 +27,11 @@ import type {
   NicheOption,
   SocialOption,
 } from "@/types/panel-data";
-import { DEFAULT_SOCIAL_OPTIONS, normalizeIntegrationStatus } from "@/types/panel-data";
+import {
+  contractorsWithStatus,
+  DEFAULT_SOCIAL_OPTIONS,
+  normalizeIntegrationStatus,
+} from "@/types/panel-data";
 import { createPanelId } from "@/lib/id";
 import { normalizeTelegramUsername } from "@/lib/employee-utils";
 import {
@@ -1148,8 +1152,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       avatarUrl?: string;
       panelLogin?: string;
     }): string | null => {
-      const actor = normalizeUsername(currentLogin ?? "");
-      if (actor !== SUPERADMIN_LOGIN || role !== "superadmin") return null;
+      if (!isAdminRef.current) return null;
       const fullName = input.fullName.trim();
       const telegramUsername = normalizeTelegramUsername(input.telegramUsername);
       const panelLogin = input.panelLogin?.trim()
@@ -1192,7 +1195,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
       });
       return applied ? newId : null;
     },
-    [currentLogin, role, patch],
+    [patch],
   );
 
   const updateEmployee = useCallback(
@@ -1267,8 +1270,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
 
   const removeEmployee = useCallback(
     (id: string) => {
-      const actor = normalizeUsername(currentLogin ?? "");
-      if (actor !== SUPERADMIN_LOGIN || role !== "superadmin") return;
+      if (!isAdminRef.current) return;
       patch((prev) => ({
         ...prev,
         employees: prev.employees.filter((e) => e.id !== id),
@@ -1282,7 +1284,7 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
         ),
       }));
     },
-    [currentLogin, role, patch],
+    [patch],
   );
 
   const addIntegration = useCallback(
@@ -1338,7 +1340,11 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           ...(assign ? { assignedEmployeeId: assign } : {}),
           ...(cooperationType ? { cooperationType } : {}),
         };
-        return { ...prev, integrations: [...prev.integrations, row] };
+        return {
+          ...prev,
+          integrations: [...prev.integrations, row],
+          contractors: contractorsWithStatus(prev.contractors, contractorId, "active"),
+        };
       });
 
       return applied ? newId : null;
@@ -1466,8 +1472,18 @@ export function PanelDataProvider({ children }: { children: ReactNode }) {
           autoUncompleteKeys.push(integrationReleaseVerifyTaskKey(id));
         }
 
+        let contractors = prev.contractors;
+        if (updates.status !== undefined && next.status === "no_response") {
+          contractors = contractorsWithStatus(
+            contractors,
+            next.contractorId,
+            "paused",
+          );
+        }
+
         return {
           ...prev,
+          contractors,
           integrations: prev.integrations.map((r) =>
             r.id === id ? next : r,
           ),

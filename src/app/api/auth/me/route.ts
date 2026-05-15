@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSessionUser, isDatabaseConfigured } from "@/lib/auth-session-prisma";
-import { normalizeUsername, SUPERADMIN_LOGIN } from "@/lib/panel-auth-utils";
+import { isPanelAdminRole } from "@/lib/panel-auth-utils";
 import { prisma } from "@/lib/prisma";
 import type { PanelUserPublic } from "@/types/panel-auth-api";
 
@@ -34,11 +34,8 @@ export async function GET() {
   }
 
   const me = toPublic(sessionUser);
-  const isSuperadmin =
-    sessionUser.role === "superadmin" &&
-    normalizeUsername(sessionUser.login) === SUPERADMIN_LOGIN;
 
-  if (!isSuperadmin) {
+  if (!isPanelAdminRole(sessionUser.role)) {
     return NextResponse.json({
       authenticated: true as const,
       me,

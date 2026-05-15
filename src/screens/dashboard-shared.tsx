@@ -24,7 +24,10 @@ export const primaryActionButtonClass =
 export const dashboardMonthPickerRowClass = "flex flex-wrap items-stretch gap-2";
 
 export const dashboardMonthInputClass =
-  "min-h-[40px] min-w-[10rem] border-0 bg-app-fg/[0.06] px-3 py-2 text-sm text-app-fg outline-none ring-1 ring-app-fg/10 focus:ring-2 focus:ring-app-accent/40";
+  "min-h-[42px] min-w-[10rem] border-0 bg-app-fg/[0.06] px-3 py-2 text-sm text-app-fg outline-none ring-1 ring-app-fg/10 focus:ring-2 focus:ring-app-accent/40";
+
+/** Месяц + кнопки в шапке: низ полей на одной линии (подпись «Месяц» сверху) */
+export const dashboardHeaderActionsRowClass = "flex flex-wrap items-end gap-3";
 
 export const dashboardMonthNavButtonClass =
   "inline-flex min-h-0 min-w-[40px] shrink-0 items-center justify-center text-app-fg/60 ring-1 ring-app-fg/10 transition hover:bg-app-fg/[0.04]";

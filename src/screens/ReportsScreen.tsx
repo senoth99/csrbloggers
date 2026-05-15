@@ -107,11 +107,6 @@ export function ReportsScreen() {
           </tbody>
         </table>
       </div>
-
-      <p className="text-xs text-app-fg/40 mt-4">
-        Интеграции — по дате выхода (releaseDate). Договорённости — созданы в месяце (черновик/перенос).
-        Доставки «Получено» — по deliveredAt, иначе updatedAt (без createdAt).
-      </p>
     </div>
   );
 }

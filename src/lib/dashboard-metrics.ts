@@ -204,9 +204,22 @@ export function sumPromoActivations(integrations: Integration[]): number {
   return s;
 }
 
+/** Пропуск в KPI, когда значения нет */
+export const DASHBOARD_EMPTY_VALUE = "—";
+
 /** Есть ли хотя бы одна интеграция с заполненным бюджетом */
 export function integrationsHaveAnyBudget(integrations: Integration[]): boolean {
   return integrations.some((i) => i.budget != null && Number.isFinite(i.budget));
+}
+
+export function integrationsHaveAnyReach(integrations: Integration[]): boolean {
+  return integrations.some((i) => i.reach != null && Number.isFinite(i.reach));
+}
+
+export function integrationsHaveAnyPromoActivations(integrations: Integration[]): boolean {
+  return integrations.some(
+    (i) => i.promoActivations != null && Number.isFinite(i.promoActivations),
+  );
 }
 
 /** Общий CPM по суммам бюджета и охватов за месяц (без бюджетов в данных — не считаем) */

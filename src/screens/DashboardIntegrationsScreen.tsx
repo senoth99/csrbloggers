@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { DashboardIntegrationsMonthTable } from "@/components/dashboard/DashboardIntegrationsMonthTable";
 import { usePanelData } from "@/context/PanelDataContext";
 import { INTEGRATION_STATUS_LABELS, type IntegrationStatus } from "@/types/panel-data";
 import {
@@ -18,12 +19,19 @@ import {
   dashboardMonthInputClass,
   dashboardMonthNavButtonClass,
   dashboardMonthPickerRowClass,
+  dashboardPageStackClass,
   dashboardPageTitleClass,
 } from "@/screens/dashboard-shared";
 
 export function DashboardIntegrationsScreen() {
   const { ym, setMonth, monthInputValue } = useDashboardMonth();
-  const { integrations, socialOptions } = usePanelData();
+  const { integrations, socialOptions, contractors } = usePanelData();
+
+  const contractorName = useMemo(() => {
+    const m = new Map<string, string>();
+    contractors.forEach((c) => m.set(c.id, c.name));
+    return m;
+  }, [contractors]);
 
   const ymPrev = useMemo(() => shiftYearMonth(ym, -1), [ym]);
 
@@ -143,13 +151,22 @@ export function DashboardIntegrationsScreen() {
         </div>
       </DashboardChartSection>
 
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-        <DashboardChartSection title="Статусы">
-          <DistributionBars entries={statusBars} />
-        </DashboardChartSection>
-        <DashboardChartSection title="Площадки">
-          <DistributionBars entries={platformBars} />
-        </DashboardChartSection>
+      <div className={`space-y-8 ${dashboardPageStackClass}`}>
+        <DashboardIntegrationsMonthTable
+          ym={ym}
+          integrations={integrations}
+          socialOptions={socialOptions}
+          contractorName={contractorName}
+        />
+
+        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+          <DashboardChartSection title="Создано в месяце · статусы">
+            <DistributionBars entries={statusBars} />
+          </DashboardChartSection>
+          <DashboardChartSection title="Создано в месяце · площадки">
+            <DistributionBars entries={platformBars} />
+          </DashboardChartSection>
+        </div>
       </div>
     </div>
   );

@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { X } from "lucide-react";
 import { useDialogA11y } from "@/lib/focus-trap";
@@ -26,11 +27,16 @@ export function SlideOver({
 }: SlideOverProps) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
   const [shouldRender, setShouldRender] = useState(open);
   const [isVisible, setIsVisible] = useState(false);
 
   const dialogActive = open && shouldRender && isVisible;
   const { onKeyDownTrap } = useDialogA11y(dialogActive, onClose, panelRef);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (open) {
@@ -52,25 +58,24 @@ export function SlideOver({
     };
   }, [open]);
 
-  if (!shouldRender) return null;
+  if (!mounted || !shouldRender) return null;
 
-  return (
-    <div className="fixed inset-0 z-50" role="presentation" onClick={onClose}>
+  return createPortal(
+    <div className="fixed inset-0 z-[60]" role="presentation" onClick={onClose}>
       <div
         className={`absolute inset-0 bg-black/50 transition-opacity duration-200 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
         aria-hidden
-        inert
       />
       <div
         ref={panelRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby={title ? titleId : undefined}
-        className={`fixed flex flex-col border-app-fg/10 bg-app-bg text-app-fg shadow-accent-glow transition-transform duration-200 ease-out
-          inset-x-0 bottom-0 max-h-[80vh] rounded-t-xl border-t
-          md:inset-y-0 md:right-0 md:left-auto md:h-full md:max-h-none md:w-full md:rounded-none md:border-l md:border-t-0 ${widthClass}
+        className={`fixed flex max-h-[min(85dvh,100%)] w-full flex-col border-app-fg/10 bg-app-bg text-app-fg shadow-accent-glow transition-transform duration-200 ease-out
+          inset-x-0 bottom-0 rounded-t-xl border-t
+          md:inset-y-0 md:right-0 md:left-auto md:h-full md:max-h-none md:rounded-none md:border-l md:border-t-0 ${widthClass}
           ${isVisible ? "translate-y-0 md:translate-x-0" : "translate-y-full md:translate-x-full md:translate-y-0"}`}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDownTrap}
@@ -98,16 +103,20 @@ export function SlideOver({
           </header>
         ) : null}
         <div
-          className={`min-h-0 flex-1 overflow-y-auto ${hideHeader ? "" : "px-4 py-4 sm:px-5"}`}
+          className={`overflow-y-auto overscroll-contain md:min-h-0 md:flex-1 ${
+            hideHeader ? "" : "px-4 py-4 sm:px-5"
+          }`}
         >
           {children}
         </div>
         {footer ? (
-          <footer className="sticky bottom-0 shrink-0 border-t border-app-fg/10 bg-app-bg px-4 py-3 sm:px-5 sm:py-4">
+          <footer className="shrink-0 border-t border-app-fg/10 bg-app-bg px-4 py-3 sm:px-5 sm:py-4">
             {footer}
           </footer>
         ) : null}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
+
