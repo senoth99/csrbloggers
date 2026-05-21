@@ -294,6 +294,28 @@ export function IntegrationDetailScreen({
     onClose?.();
   }, [isDrawer, canWriteCore, row, saveDrawerBlur, onClose]);
 
+  const resetPositionForm = useCallback(() => {
+    setPosTitleDraft("");
+    setPosBudgetDraft("");
+  }, []);
+
+  const openAddPositionForm = useCallback(() => {
+    resetPositionForm();
+    setIsAddPositionOpen(true);
+  }, [resetPositionForm]);
+
+  useEffect(() => {
+    if (!promptAddPosition || !row || !canWriteCore) return;
+    openAddPositionForm();
+    onPromptAddPositionHandled?.();
+  }, [
+    promptAddPosition,
+    row,
+    canWriteCore,
+    openAddPositionForm,
+    onPromptAddPositionHandled,
+  ]);
+
   if (!row) {
     return (
       <div className={isDrawer ? "space-y-3 p-4" : "space-y-4"}>
@@ -388,22 +410,6 @@ export function IntegrationDetailScreen({
     });
     setIsEditOpen(false);
   }
-
-  const resetPositionForm = useCallback(() => {
-    setPosTitleDraft("");
-    setPosBudgetDraft("");
-  }, []);
-
-  const openAddPositionForm = useCallback(() => {
-    resetPositionForm();
-    setIsAddPositionOpen(true);
-  }, [resetPositionForm]);
-
-  useEffect(() => {
-    if (!promptAddPosition || !row || !canWriteCore) return;
-    openAddPositionForm();
-    onPromptAddPositionHandled?.();
-  }, [promptAddPosition, row?.id, canWriteCore, openAddPositionForm, onPromptAddPositionHandled]);
 
   function handleAddPosition(e: React.FormEvent) {
     e.preventDefault();
