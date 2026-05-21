@@ -4,9 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import type { Integration, SocialOption } from "@/types/panel-data";
 import { INTEGRATION_STATUS_LABELS } from "@/types/panel-data";
-import { integrationsPublishedInMonth, type YearMonth } from "@/lib/dashboard-metrics";
-import { formatCalendarDate } from "@/lib/format-ru";
-import { formatRuMoney } from "@/lib/format-ru";
+import { formatCalendarDate, formatRuMoney } from "@/lib/format-ru";
 import { HorizontalScrollTable } from "@/components/ui";
 import {
   DashboardChartSection,
@@ -17,35 +15,35 @@ import {
 const nfReach = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 0 });
 
 type Props = {
-  ym: YearMonth;
+  title: string;
+  emptyMessage: string;
   integrations: Integration[];
   socialOptions: SocialOption[];
   contractorName: Map<string, string>;
 };
 
 export function DashboardIntegrationsMonthTable({
-  ym,
+  title,
+  emptyMessage,
   integrations,
   socialOptions,
   contractorName,
 }: Props) {
   const rows = useMemo(
     () =>
-      integrationsPublishedInMonth(integrations, ym).sort((a, b) =>
+      [...integrations].sort((a, b) =>
         (b.releaseDate ?? "").localeCompare(a.releaseDate ?? ""),
       ),
-    [integrations, ym],
+    [integrations],
   );
 
   const platformLabel = (id: string) =>
     socialOptions.find((o) => o.id === id)?.label ?? id;
 
   return (
-    <DashboardChartSection title="Интеграции за месяц">
+    <DashboardChartSection title={title}>
       {rows.length === 0 ? (
-        <p className="py-6 text-center text-sm text-app-fg/45">
-          Нет опубликованных интеграций с датой выхода в выбранном месяце.
-        </p>
+        <p className="py-6 text-center text-sm text-app-fg/45">{emptyMessage}</p>
       ) : (
         <HorizontalScrollTable className="-mx-1 px-1" scrollClassName="overflow-x-auto">
           <table className="min-w-[640px] w-full text-left text-sm">

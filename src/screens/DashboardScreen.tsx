@@ -14,10 +14,12 @@ import {
   deliveriesCreatedInMonth,
   formatYearMonthString,
   integrationReachByCalendarDayInMonth,
+  integrationsAgreementsInMonth,
   integrationsHaveAnyBudget,
   integrationsHaveAnyPromoActivations,
   integrationsHaveAnyReach,
   integrationsPublishedInMonth,
+  integrationsWithReleaseInMonth,
   monthOverMonthTrend,
   monthOverMonthTrendCpm,
   shiftYearMonth,
@@ -101,6 +103,15 @@ export function DashboardScreen() {
     return m;
   }, [contractors]);
 
+  const releaseMonth = useMemo(
+    () => integrationsWithReleaseInMonth(integrations, ym),
+    [integrations, ym],
+  );
+  const releaseMonthPrev = useMemo(
+    () => integrationsWithReleaseInMonth(integrations, ymPrev),
+    [integrations, ymPrev],
+  );
+
   const pubMonth = useMemo(
     () => integrationsPublishedInMonth(integrations, ym),
     [integrations, ym],
@@ -110,16 +121,27 @@ export function DashboardScreen() {
     [integrations, ymPrev],
   );
 
+  const agreementsMonth = useMemo(
+    () => integrationsAgreementsInMonth(integrations, ym),
+    [integrations, ym],
+  );
+  const agreementsMonthPrev = useMemo(
+    () => integrationsAgreementsInMonth(integrations, ymPrev),
+    [integrations, ymPrev],
+  );
+
   const kpi = useMemo(() => {
-    const reach = sumIntegrationReach(pubMonth);
-    const reachPrev = sumIntegrationReach(pubMonthPrev);
-    const budget = sumIntegrationBudget(pubMonth);
-    const budgetPrev = sumIntegrationBudget(pubMonthPrev);
-    const cpm = aggregateCpmForMonth(pubMonth);
-    const cpmPrev = aggregateCpmForMonth(pubMonthPrev);
+    const reach = sumIntegrationReach(releaseMonth);
+    const reachPrev = sumIntegrationReach(releaseMonthPrev);
+    const budget = sumIntegrationBudget(releaseMonth);
+    const budgetPrev = sumIntegrationBudget(releaseMonthPrev);
+    const cpm = aggregateCpmForMonth(releaseMonth);
+    const cpmPrev = aggregateCpmForMonth(releaseMonthPrev);
     return {
-      count: pubMonth.length,
-      countPrev: pubMonthPrev.length,
+      published: pubMonth.length,
+      publishedPrev: pubMonthPrev.length,
+      agreements: agreementsMonth.length,
+      agreementsPrev: agreementsMonthPrev.length,
       reach,
       reachPrev,
       budget,
@@ -127,16 +149,23 @@ export function DashboardScreen() {
       cpm,
       cpmPrev,
     };
-  }, [pubMonth, pubMonthPrev]);
+  }, [
+    releaseMonth,
+    releaseMonthPrev,
+    pubMonth,
+    pubMonthPrev,
+    agreementsMonth,
+    agreementsMonthPrev,
+  ]);
 
   const reachByDay = useMemo(
-    () => integrationReachByCalendarDayInMonth(pubMonth, ym),
-    [pubMonth, ym],
+    () => integrationReachByCalendarDayInMonth(releaseMonth, ym),
+    [releaseMonth, ym],
   );
 
   const manualPromoActivations = useMemo(
-    () => sumPromoActivations(pubMonth),
-    [pubMonth],
+    () => sumPromoActivations(releaseMonth),
+    [releaseMonth],
   );
 
   function handleExportThisMonth() {
@@ -242,26 +271,39 @@ export function DashboardScreen() {
       </div>
 
       <DashboardChartSection title="Ключевые показатели">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           <StatCard
-            label="Интеграции (выход в месяце)"
-            value={kpi.count > 0 ? kpi.count : DASHBOARD_EMPTY_VALUE}
+            label="Договорённости"
+            value={
+              kpi.agreements > 0 ? kpi.agreements : DASHBOARD_EMPTY_VALUE
+            }
             accent="accent"
             trend={
-              kpi.count > 0
-                ? monthOverMonthTrend(kpi.count, kpi.countPrev)
+              kpi.agreements > 0
+                ? monthOverMonthTrend(kpi.agreements, kpi.agreementsPrev)
+                : undefined
+            }
+          />
+          <StatCard
+            label="Опубликовано"
+            value={
+              kpi.published > 0 ? kpi.published : DASHBOARD_EMPTY_VALUE
+            }
+            trend={
+              kpi.published > 0
+                ? monthOverMonthTrend(kpi.published, kpi.publishedPrev)
                 : undefined
             }
           />
           <StatCard
             label="Охваты"
             value={
-              integrationsHaveAnyReach(pubMonth)
+              integrationsHaveAnyReach(releaseMonth)
                 ? nfKpi.format(kpi.reach)
                 : DASHBOARD_EMPTY_VALUE
             }
             trend={
-              integrationsHaveAnyReach(pubMonth)
+              integrationsHaveAnyReach(releaseMonth)
                 ? monthOverMonthTrend(kpi.reach, kpi.reachPrev)
                 : undefined
             }
@@ -269,12 +311,12 @@ export function DashboardScreen() {
           <StatCard
             label="Бюджет"
             value={
-              integrationsHaveAnyBudget(pubMonth)
+              integrationsHaveAnyBudget(releaseMonth)
                 ? `${formatRuMoney(kpi.budget)} ₽`
                 : DASHBOARD_EMPTY_VALUE
             }
             trend={
-              integrationsHaveAnyBudget(pubMonth)
+              integrationsHaveAnyBudget(releaseMonth)
                 ? monthOverMonthTrend(kpi.budget, kpi.budgetPrev)
                 : undefined
             }
@@ -294,7 +336,7 @@ export function DashboardScreen() {
           <StatCard
             label="Активаций (ручной ввод)"
             value={
-              integrationsHaveAnyPromoActivations(pubMonth)
+              integrationsHaveAnyPromoActivations(releaseMonth)
                 ? nfKpi.format(manualPromoActivations)
                 : DASHBOARD_EMPTY_VALUE
             }

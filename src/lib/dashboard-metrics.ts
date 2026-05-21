@@ -83,6 +83,24 @@ export function agreementsCreatedInMonth(
   ).length;
 }
 
+/** Интеграции с датой выхода (releaseDate) в календарном месяце (любой статус). */
+export function integrationsWithReleaseInMonth(
+  integrations: Integration[],
+  ym: YearMonth,
+): Integration[] {
+  return integrations.filter((i) => ymdInYearMonth(i.releaseDate, ym));
+}
+
+/** Договорённости с releaseDate в месяце (черновик / перенос). */
+export function integrationsAgreementsInMonth(
+  integrations: Integration[],
+  ym: YearMonth,
+): Integration[] {
+  return integrationsWithReleaseInMonth(integrations, ym).filter((i) =>
+    isAgreementIntegrationStatus(i.status),
+  );
+}
+
 /** Опубликованные интеграции с датой выхода (releaseDate) в календарном месяце. */
 export function integrationsPublishedInMonth(
   integrations: Integration[],

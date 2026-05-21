@@ -10,6 +10,7 @@ import {
   useState,
   type FormEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ChevronDown, Plus, Search, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -24,6 +25,7 @@ import {
   StatusBadgeDropdown,
   type FilterChip,
 } from "@/components/ui";
+import { ContractorListModal } from "@/components/ContractorListModal";
 import { DeliveryDetailScreen } from "@/screens/DeliveryDetailScreen";
 import { useTableSort } from "@/hooks/useTableSort";
 import { downloadUtf8Csv, rowsToCsv } from "@/lib/csv-export";
@@ -129,7 +131,7 @@ function DeliveriesScreenInner() {
   const [isStatusListOpen, setIsStatusListOpen] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [isContractorPickerOpen, setIsContractorPickerOpen] = useState(false);
-  const [contractorSearch, setContractorSearch] = useState("");
+  const [pickerMounted, setPickerMounted] = useState(false);
   const [isItemPickerOpen, setIsItemPickerOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState("");
   const [selectedItems, setSelectedItems] = useState<
@@ -356,16 +358,6 @@ function DeliveriesScreenInner() {
     return chips;
   }, [search, statusFilter, contractorFilter, employeeFilter, contractors, byEmployee, isAdmin, myEmployeeId]);
 
-  const filteredContractors = useMemo(() => {
-    const q = contractorSearch.trim().toLowerCase();
-    if (!q) return contractors;
-    return contractors.filter((contractor) => {
-      const fio = (contractor.contactPerson ?? "").toLowerCase();
-      const nick = (contractor.name ?? "").toLowerCase();
-      return fio.includes(q) || nick.includes(q);
-    });
-  }, [contractors, contractorSearch]);
-
   const filteredProducts = useMemo(() => {
     const q = itemSearch.trim().toLowerCase();
     const base = q
@@ -447,6 +439,10 @@ function DeliveriesScreenInner() {
   }, [cdekBanner]);
 
   useEffect(() => {
+    setPickerMounted(true);
+  }, []);
+
+  useEffect(() => {
     if (!isAdmin) return;
     const run = () => {
       void refreshStatuses(deliveriesRef.current, { silent: true });
@@ -457,6 +453,7 @@ function DeliveriesScreenInner() {
   }, [isAdmin, refreshStatuses]);
 
   useEffect(() => {
+    if (!isAddOpen && !isItemPickerOpen) return;
     let active = true;
     async function loadProducts() {
       try {
@@ -482,7 +479,7 @@ function DeliveriesScreenInner() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [isAddOpen, isItemPickerOpen]);
 
   function removeSelectedItem(productId: string, size: string) {
     setSelectedItems((prev) =>
@@ -519,7 +516,6 @@ function DeliveriesScreenInner() {
     setOrderNumber("");
     setTrackNumber("");
     setSelectedItems([]);
-    setContractorSearch("");
     setItemSearch("");
     setIsItemPickerOpen(false);
     setSelectedProductId("");
@@ -1071,9 +1067,19 @@ function DeliveriesScreenInner() {
         ) : null}
       </SlideOver>
 
-      {isItemPickerOpen && isAddOpen && (
-        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/75 px-4">
-          <div className="w-full max-w-4xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6">
+      {pickerMounted &&
+        isItemPickerOpen &&
+        isAddOpen &&
+        createPortal(
+        <div
+          className="fixed inset-0 z-[80] flex items-center justify-center bg-black/75 px-4 py-8"
+          role="presentation"
+          onClick={() => setIsItemPickerOpen(false)}
+        >
+          <div
+            className="w-full max-w-4xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="mb-4 flex items-start justify-between gap-3">
               <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-app-fg">
                 Выбор вещи
@@ -1177,61 +1183,20 @@ function DeliveriesScreenInner() {
               Готово
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
-      {isContractorPickerOpen && isAddOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/75 px-4">
-          <div className="w-full max-w-2xl border border-app-fg/15 bg-app-bg p-5 shadow-accent-glow sm:p-6">
-            <div className="mb-4 flex items-start justify-between gap-3">
-              <h3 className="text-sm font-semibold uppercase tracking-[0.1em] text-app-fg">
-                Выбор контрагента
-              </h3>
-              <button
-                type="button"
-                onClick={() => setIsContractorPickerOpen(false)}
-                className="border border-app-fg/15 p-1.5 text-app-fg/70 transition hover:border-app-fg/40"
-                aria-label="Закрыть"
-              >
-                <X className="h-4 w-4" strokeWidth={1.5} />
-              </button>
-            </div>
-
-            <input
-              value={contractorSearch}
-              onChange={(e) => setContractorSearch(e.target.value)}
-              placeholder="Поиск по ФИО или нику..."
-              className="mb-4 w-full border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-            />
-
-            <div className="max-h-[60vh] overflow-y-auto border border-app-fg/15">
-              {filteredContractors.length === 0 ? (
-                <p className="px-4 py-8 text-sm text-app-fg/55">Ничего не найдено.</p>
-              ) : (
-                filteredContractors.map((contractor) => (
-                  <button
-                    key={contractor.id}
-                    type="button"
-                    onClick={() => {
-                      setContractorId(contractor.id);
-                      setSelectedItems([]);
-                      setIsContractorPickerOpen(false);
-                    }}
-                    className="block w-full px-4 py-3 text-left transition hover:bg-app-fg/[0.04]"
-                  >
-                    <p className="text-sm font-semibold uppercase tracking-wide text-app-fg">
-                      {contractor.name}
-                    </p>
-                    <p className="mt-0.5 text-sm text-app-fg/65">
-                      {contractor.contactPerson?.trim() || "Без ФИО"}
-                    </p>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      )}
+      <ContractorListModal
+        open={isContractorPickerOpen && isAddOpen}
+        onClose={() => setIsContractorPickerOpen(false)}
+        contractors={contractors}
+        onPick={(id) => {
+          setContractorId(id);
+          setSelectedItems([]);
+        }}
+        zIndexClass="z-[80]"
+      />
 
       <SlideOver
         open={Boolean(selectedId)}

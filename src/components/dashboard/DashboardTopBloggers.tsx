@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import Link from "next/link";
 import type { Integration } from "@/types/panel-data";
 import {
-  integrationsPublishedInMonth,
+  integrationsWithReleaseInMonth,
   type YearMonth,
 } from "@/lib/dashboard-metrics";
 import { DashboardChartSection, listDivideClass } from "@/screens/dashboard-shared";
@@ -19,9 +19,9 @@ type Props = {
 
 export function DashboardTopBloggers({ ym, integrations, contractorName }: Props) {
   const rows = useMemo(() => {
-    const pub = integrationsPublishedInMonth(integrations, ym);
+    const inReleaseMonth = integrationsWithReleaseInMonth(integrations, ym);
     const byContractor = new Map<string, number>();
-    for (const i of pub) {
+    for (const i of inReleaseMonth) {
       if (i.reach == null || !Number.isFinite(i.reach)) continue;
       byContractor.set(
         i.contractorId,
@@ -42,7 +42,7 @@ export function DashboardTopBloggers({ ym, integrations, contractorName }: Props
     <DashboardChartSection title="Топ блогеров по охвату">
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-app-fg/45">
-          Нет опубликованных интеграций с охватом за месяц.
+          Нет интеграций с охватом и датой выхода в выбранном месяце.
         </p>
       ) : (
         <ol className={`rounded-sm border border-app-fg/10 ${listDivideClass}`}>

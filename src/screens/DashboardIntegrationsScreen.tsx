@@ -4,10 +4,10 @@ import { useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { DashboardIntegrationsMonthTable } from "@/components/dashboard/DashboardIntegrationsMonthTable";
 import { usePanelData } from "@/context/PanelDataContext";
-import { INTEGRATION_STATUS_LABELS, type IntegrationStatus } from "@/types/panel-data";
 import {
   countBy,
-  integrationsCreatedInMonth,
+  integrationsAgreementsInMonth,
+  integrationsPublishedInMonth,
   monthOverMonthTrend,
   shiftYearMonth,
 } from "@/lib/dashboard-metrics";
@@ -35,45 +35,26 @@ export function DashboardIntegrationsScreen() {
 
   const ymPrev = useMemo(() => shiftYearMonth(ym, -1), [ym]);
 
-  const inMonth = useMemo(
-    () => integrationsCreatedInMonth(integrations, ym),
+  const agreementsMonth = useMemo(
+    () => integrationsAgreementsInMonth(integrations, ym),
     [integrations, ym],
   );
-
-  const inMonthPrev = useMemo(
-    () => integrationsCreatedInMonth(integrations, ymPrev),
+  const agreementsMonthPrev = useMemo(
+    () => integrationsAgreementsInMonth(integrations, ymPrev),
     [integrations, ymPrev],
   );
 
-  const inPipeline = useMemo(() => {
-    return integrations.filter((i) => {
-      const rel = i.releaseDate?.trim();
-      if (!rel) return false;
-      const [y, m] = rel.split("-").map(Number);
-      return y === ym.year && m === ym.month;
-    });
-  }, [integrations, ym]);
+  const publishedMonth = useMemo(
+    () => integrationsPublishedInMonth(integrations, ym),
+    [integrations, ym],
+  );
+  const publishedMonthPrev = useMemo(
+    () => integrationsPublishedInMonth(integrations, ymPrev),
+    [integrations, ymPrev],
+  );
 
-  const inPipelinePrev = useMemo(() => {
-    return integrations.filter((i) => {
-      const rel = i.releaseDate?.trim();
-      if (!rel) return false;
-      const [y, m] = rel.split("-").map(Number);
-      return y === ymPrev.year && m === ymPrev.month;
-    });
-  }, [integrations, ymPrev]);
-
-  const statusBars = useMemo(() => {
-    const raw = countBy(inMonth.map((i) => i.status));
-    return (Object.keys(INTEGRATION_STATUS_LABELS) as IntegrationStatus[]).map((k) => ({
-      key: k,
-      label: INTEGRATION_STATUS_LABELS[k],
-      value: raw[k] ?? 0,
-    }));
-  }, [inMonth]);
-
-  const platformBars = useMemo(() => {
-    const raw = countBy(inMonth.map((i) => i.socialNetworkId));
+  const agreementsPlatformBars = useMemo(() => {
+    const raw = countBy(agreementsMonth.map((i) => i.socialNetworkId));
     return Object.entries(raw)
       .map(([id, value]) => ({
         key: id,
@@ -81,7 +62,23 @@ export function DashboardIntegrationsScreen() {
         value,
       }))
       .sort((a, b) => b.value - a.value);
-  }, [inMonth, socialOptions]);
+  }, [agreementsMonth, socialOptions]);
+
+  const publishedPlatformBars = useMemo(() => {
+    const raw = countBy(publishedMonth.map((i) => i.socialNetworkId));
+    return Object.entries(raw)
+      .map(([id, value]) => ({
+        key: id,
+        label: socialOptions.find((o) => o.id === id)?.label ?? id,
+        value,
+      }))
+      .sort((a, b) => b.value - a.value);
+  }, [publishedMonth, socialOptions]);
+
+  const tableProps = {
+    socialOptions,
+    contractorName,
+  };
 
   return (
     <div className="space-y-10 pb-10">
@@ -135,17 +132,27 @@ export function DashboardIntegrationsScreen() {
       </header>
 
       <DashboardChartSection title="Сводка">
+        <p className="-mt-1 mb-4 text-xs text-app-fg/45">
+          Считаем по дате выхода в выбранном месяце: договорённости — черновик и перенос,
+          публикации — статус «опубликовано».
+        </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <StatCard
-            label="Создано в месяце"
-            value={inMonth.length}
+            label="Договорённости"
+            value={agreementsMonth.length}
             accent="accent"
-            trend={monthOverMonthTrend(inMonth.length, inMonthPrev.length)}
+            trend={monthOverMonthTrend(
+              agreementsMonth.length,
+              agreementsMonthPrev.length,
+            )}
           />
           <StatCard
-            label="Планируемый выход в месяце"
-            value={inPipeline.length}
-            trend={monthOverMonthTrend(inPipeline.length, inPipelinePrev.length)}
+            label="Опубликовано"
+            value={publishedMonth.length}
+            trend={monthOverMonthTrend(
+              publishedMonth.length,
+              publishedMonthPrev.length,
+            )}
           />
           <StatCard label="Всего в системе" value={integrations.length} />
         </div>
@@ -153,18 +160,33 @@ export function DashboardIntegrationsScreen() {
 
       <div className={`space-y-8 ${dashboardPageStackClass}`}>
         <DashboardIntegrationsMonthTable
-          ym={ym}
-          integrations={integrations}
-          socialOptions={socialOptions}
-          contractorName={contractorName}
+          title="Договорённости"
+          emptyMessage="Нет договорённостей с датой выхода в выбранном месяце."
+          integrations={agreementsMonth}
+          {...tableProps}
+        />
+
+        <DashboardIntegrationsMonthTable
+          title="Опубликовано"
+          emptyMessage="Нет опубликованных интеграций с датой выхода в выбранном месяце."
+          integrations={publishedMonth}
+          {...tableProps}
         />
 
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
-          <DashboardChartSection title="Создано в месяце · статусы">
-            <DistributionBars entries={statusBars} />
+          <DashboardChartSection title="Договорённости · площадки">
+            {agreementsPlatformBars.length === 0 ? (
+              <p className="py-4 text-center text-sm text-app-fg/45">Нет данных.</p>
+            ) : (
+              <DistributionBars entries={agreementsPlatformBars} />
+            )}
           </DashboardChartSection>
-          <DashboardChartSection title="Создано в месяце · площадки">
-            <DistributionBars entries={platformBars} />
+          <DashboardChartSection title="Опубликовано · площадки">
+            {publishedPlatformBars.length === 0 ? (
+              <p className="py-4 text-center text-sm text-app-fg/45">Нет данных.</p>
+            ) : (
+              <DistributionBars entries={publishedPlatformBars} />
+            )}
           </DashboardChartSection>
         </div>
       </div>

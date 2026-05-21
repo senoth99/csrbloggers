@@ -8,7 +8,7 @@ import {
   isPublishedIntegrationStatus,
 } from "@/types/panel-data";
 import {
-  integrationsCreatedInMonth,
+  integrationsWithReleaseInMonth,
   monthOverMonthTrend,
   monthOverMonthTrendCpm,
   shiftYearMonth,
@@ -136,12 +136,12 @@ export function DashboardGeneralReportTable({ ym, integrations }: Props) {
   const ymPrev = useMemo(() => shiftYearMonth(ym, -1), [ym]);
 
   const inMonth = useMemo(
-    () => integrationsCreatedInMonth(integrations, ym),
+    () => integrationsWithReleaseInMonth(integrations, ym),
     [integrations, ym],
   );
 
   const inMonthPrev = useMemo(
-    () => integrationsCreatedInMonth(integrations, ymPrev),
+    () => integrationsWithReleaseInMonth(integrations, ymPrev),
     [integrations, ymPrev],
   );
 

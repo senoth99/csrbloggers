@@ -32,7 +32,11 @@ import {
   formatRuTime,
 } from "@/lib/format-ru";
 import { normalizeIntegrationPublicLink } from "@/lib/integration-link";
-import { parseBudgetReachField } from "@/lib/integration-metrics";
+import {
+  formatIntegrationBudgetCell,
+  formatIntegrationPositionsCell,
+  parseBudgetReachField,
+} from "@/lib/integration-metrics";
 import { useTableSort } from "@/hooks/useTableSort";
 import { localReleaseDateTimeMs } from "@/lib/panel-tasks";
 import {
@@ -88,6 +92,7 @@ export function IntegrationsScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedId = searchParams.get("id");
+  const promptAddPosition = searchParams.get("addPosition") === "1";
   const { sort, toggleSort, sortKey, sortDir } = useTableSort<PanelSortKey>();
   const { currentUsername } = useAuth();
   const {
@@ -289,7 +294,7 @@ export function IntegrationsScreen() {
     if (id) {
       closeAddModal();
       setHighlightId(id);
-      router.push(`/integrations?id=${encodeURIComponent(id)}`);
+      router.push(`/integrations?id=${encodeURIComponent(id)}&addPosition=1`);
     } else {
       setAddFormError("Не удалось создать интеграцию (заголовок занят или нет данных).");
     }
@@ -1185,7 +1190,10 @@ export function IntegrationsScreen() {
                     Дата выхода
                   </span>
                 </SortableTh>
-                <th className="hidden min-w-0 py-2.5 px-2 text-right align-middle md:table-cell">Бюджет, ₽</th>
+                <th className="hidden min-w-0 px-2 py-2.5 align-middle md:table-cell">Позиции</th>
+                <th className="min-w-0 px-2 py-2.5 text-right align-middle tabular-nums max-md:w-[14%] md:table-cell">
+                  Бюджет, ₽
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -1310,15 +1318,14 @@ export function IntegrationsScreen() {
                     >
                       {formatIntegrationReleaseDateTable(row.releaseDate)}
                     </td>
-                    <td className="hidden min-w-0 px-2 py-2 text-right tabular-nums text-app-fg/80 md:table-cell">
-                      {(() => {
-                        const positions = row.positions ?? [];
-                        if (positions.length > 0) {
-                          const sum = positions.reduce((s, p) => s + (p.budget ?? 0), 0);
-                          return sum > 0 ? formatRuMoney(sum) : "—";
-                        }
-                        return row.budget != null ? formatRuMoney(row.budget) : "—";
-                      })()}
+                    <td
+                      className="hidden min-w-0 truncate px-2 py-2.5 align-middle text-app-fg/75 md:table-cell"
+                      title={formatIntegrationPositionsCell(row)}
+                    >
+                      {formatIntegrationPositionsCell(row)}
+                    </td>
+                    <td className="min-w-0 px-2 py-2.5 text-right align-middle tabular-nums text-app-fg/80 max-md:w-[14%]">
+                      {formatIntegrationBudgetCell(row)}
                     </td>
                   </tr>
                 );
@@ -1566,6 +1573,13 @@ export function IntegrationsScreen() {
             integrationId={selectedId}
             variant="drawer"
             onClose={closeDetail}
+            promptAddPosition={promptAddPosition}
+            onPromptAddPositionHandled={() => {
+              const q = new URLSearchParams(searchParams.toString());
+              q.delete("addPosition");
+              const next = q.toString();
+              router.replace(next ? `/integrations?${next}` : "/integrations");
+            }}
           />
         ) : null}
       </SlideOver>

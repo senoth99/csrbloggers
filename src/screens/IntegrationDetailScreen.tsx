@@ -37,7 +37,13 @@ import {
 import { integrationPublicLinkHref } from "@/lib/integration-link";
 import { computeContractorRating10 } from "@/lib/contractor-rating";
 import { ContractorRatingBadge } from "@/components/ContractorRatingBadge";
-import { computeCpmRub, parseBudgetReachField } from "@/lib/integration-metrics";
+import {
+  computeCpmRub,
+  formatIntegrationBudgetCell,
+  integrationEffectiveBudgetRub,
+  parseBudgetReachField,
+  positionDisplayBudgetRub,
+} from "@/lib/integration-metrics";
 import { abbreviateFio } from "@/lib/employee-utils";
 import { nicheChoiceCaption } from "@/lib/niche-display";
 import { selectNativeChevronPad } from "@/screens/dashboard-shared";
@@ -95,12 +101,17 @@ type IntegrationDetailScreenProps = {
   integrationId?: string;
   variant?: "page" | "drawer";
   onClose?: () => void;
+  /** Открыть форму «Новая позиция» (после создания интеграции). */
+  promptAddPosition?: boolean;
+  onPromptAddPositionHandled?: () => void;
 };
 
 export function IntegrationDetailScreen({
   integrationId: integrationIdProp,
   variant = "page",
   onClose,
+  promptAddPosition = false,
+  onPromptAddPositionHandled,
 }: IntegrationDetailScreenProps) {
   const router = useRouter();
   const params = useParams();
@@ -146,12 +157,6 @@ export function IntegrationDetailScreen({
 
   const [isAddPositionOpen, setIsAddPositionOpen] = useState(false);
   const [posTitleDraft, setPosTitleDraft] = useState("");
-  const [posStatusDraft, setPosStatusDraft] = useState<IntegrationStatus>("draft");
-  const [posSocialDraft, setPosSocialDraft] = useState("");
-  const [posContractorDraft, setPosContractorDraft] = useState("");
-  const [posCoopDraft, setPosCoopDraft] = useState<IntegrationCooperationType | "">("");
-  const [posEmployeeDraft, setPosEmployeeDraft] = useState("");
-  const [posDateDraft, setPosDateDraft] = useState("");
   const [posBudgetDraft, setPosBudgetDraft] = useState("");
 
   const row = integrations.find((i) => i.id === integrationId);
@@ -242,28 +247,33 @@ export function IntegrationDetailScreen({
     ) {
       return;
     }
-    const budgetVal = parseBudgetReachField(budgetDraft);
-    const reachVal = parseBudgetReachField(reachDraft);
-    persistDrawerField({
+    const updates: Parameters<typeof updateIntegration>[1] = {
       title: t,
       contractorId: contractorDraft,
       assignedEmployeeId: assignedDraft.trim() || undefined,
       socialNetworkId: socialDraft,
       releaseDate: releaseDateDraft.trim() || undefined,
       releaseTime: releaseTimeDraft.trim() || undefined,
-      budget: budgetVal,
-      reach: reachVal,
       publicLink: linkDraft.trim() === "" ? "" : linkDraft,
       comment: commentDraft.trim() === "" ? "" : commentDraft.trim(),
       cooperationType:
         cooperationDraft === "barter" || cooperationDraft === "commercial"
           ? cooperationDraft
           : undefined,
-    });
+    };
+    if (budgetDraft.trim() !== "") {
+      const budgetVal = parseBudgetReachField(budgetDraft);
+      if (budgetVal !== undefined) updates.budget = budgetVal;
+    }
+    if (reachDraft.trim() !== "") {
+      const reachVal = parseBudgetReachField(reachDraft);
+      if (reachVal !== undefined) updates.reach = reachVal;
+    }
+    persistDrawerField(updates);
   }, [
     row,
     isDrawer,
-    isAdmin,
+    canWriteCore,
     titleDraft,
     integrations,
     contractorDraft,
@@ -278,6 +288,11 @@ export function IntegrationDetailScreen({
     cooperationDraft,
     persistDrawerField,
   ]);
+
+  const handleDrawerClose = useCallback(() => {
+    if (isDrawer && canWriteCore && row) saveDrawerBlur();
+    onClose?.();
+  }, [isDrawer, canWriteCore, row, saveDrawerBlur, onClose]);
 
   if (!row) {
     return (
@@ -374,6 +389,22 @@ export function IntegrationDetailScreen({
     setIsEditOpen(false);
   }
 
+  const resetPositionForm = useCallback(() => {
+    setPosTitleDraft("");
+    setPosBudgetDraft("");
+  }, []);
+
+  const openAddPositionForm = useCallback(() => {
+    resetPositionForm();
+    setIsAddPositionOpen(true);
+  }, [resetPositionForm]);
+
+  useEffect(() => {
+    if (!promptAddPosition || !row || !canWriteCore) return;
+    openAddPositionForm();
+    onPromptAddPositionHandled?.();
+  }, [promptAddPosition, row?.id, canWriteCore, openAddPositionForm, onPromptAddPositionHandled]);
+
   function handleAddPosition(e: React.FormEvent) {
     e.preventDefault();
     const titleTrim = posTitleDraft.trim();
@@ -381,22 +412,17 @@ export function IntegrationDetailScreen({
     const budget = parseBudgetReachField(posBudgetDraft);
     addIntegrationPosition(row.id, {
       title: titleTrim,
-      status: posStatusDraft,
-      ...(posSocialDraft ? { socialNetworkId: posSocialDraft } : {}),
-      ...(posContractorDraft ? { contractorId: posContractorDraft } : {}),
-      ...(posCoopDraft === "barter" || posCoopDraft === "commercial" ? { cooperationType: posCoopDraft } : {}),
-      ...(posEmployeeDraft ? { assignedEmployeeId: posEmployeeDraft } : {}),
-      ...(posDateDraft.trim() ? { releaseDate: posDateDraft.trim() } : {}),
+      status: row.status,
+      socialNetworkId: row.socialNetworkId,
+      contractorId: row.contractorId,
+      ...(row.cooperationType === "barter" || row.cooperationType === "commercial"
+        ? { cooperationType: row.cooperationType }
+        : {}),
+      ...(row.assignedEmployeeId ? { assignedEmployeeId: row.assignedEmployeeId } : {}),
+      ...(row.releaseDate?.trim() ? { releaseDate: row.releaseDate.trim() } : {}),
       ...(budget !== undefined ? { budget } : {}),
     });
-    setPosTitleDraft("");
-    setPosStatusDraft("draft");
-    setPosSocialDraft("");
-    setPosContractorDraft("");
-    setPosCoopDraft("");
-    setPosEmployeeDraft("");
-    setPosDateDraft("");
-    setPosBudgetDraft("");
+    resetPositionForm();
     setIsAddPositionOpen(false);
   }
 
@@ -414,6 +440,9 @@ export function IntegrationDetailScreen({
       {isDrawer ? (
         <header className="flex items-start justify-between gap-3 border-b border-app-fg/10 pb-3">
           <div className="min-w-0 flex-1 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-app-fg/45">
+              Заголовок интеграции
+            </p>
             {canWriteCore ? (
               <input
                 value={titleDraft}
@@ -447,7 +476,7 @@ export function IntegrationDetailScreen({
           {onClose ? (
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleDrawerClose}
               className="shrink-0 border border-app-fg/15 p-1.5 text-app-fg/70 transition hover:border-app-fg/40"
               aria-label="Закрыть"
             >
@@ -489,63 +518,128 @@ export function IntegrationDetailScreen({
         </>
       )}
 
-      {isDrawer && canWriteCore ? (
+      {isDrawer ? (
         <section className="space-y-3">
-          <div className="grid gap-2 sm:grid-cols-2">
-            <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
-              Площадка
-              <select
-                value={socialDraft}
-                onChange={(e) => setSocialDraft(e.target.value)}
-                onBlur={saveDrawerBlur}
-                className={`${selectClass} mt-1`}
+          {contractor ? (
+            <p className="text-xs text-app-fg/55">
+              Контрагент:{" "}
+              <Link
+                href={`/contractors?${new URLSearchParams({ id: contractor.id }).toString()}`}
+                className="font-medium text-app-fg transition hover:text-app-accent"
+                onClick={(e) => e.stopPropagation()}
               >
-                {socialOptions.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
-              Дата выхода
-              <input
-                type="date"
-                value={releaseDateDraft}
-                onChange={(e) => setReleaseDateDraft(e.target.value)}
-                onBlur={saveDrawerBlur}
-                className={`${selectClass} mt-1`}
-              />
-            </label>
-            <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
-              Бюджет, ₽
-              <input
-                type="text"
-                value={budgetDraft}
-                onChange={(e) => setBudgetDraft(e.target.value)}
-                onBlur={saveDrawerBlur}
-                className={`${selectClass} mt-1 tabular-nums`}
-              />
-            </label>
-            <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
-              Охваты
-              <input
-                type="text"
-                value={reachDraft}
-                onChange={(e) => setReachDraft(e.target.value)}
-                onBlur={saveDrawerBlur}
-                className={`${selectClass} mt-1 tabular-nums`}
-              />
-            </label>
-          </div>
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="inline-flex items-center gap-2 border border-app-fg/15 px-3 py-2 text-xs text-app-fg/70 transition hover:border-red-500/40 hover:text-red-400"
-          >
-            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Удалить
-          </button>
+                {(contractor.contactPerson?.trim() || contractor.name).toUpperCase()} · {contractor.name}
+              </Link>
+            </p>
+          ) : null}
+
+          {canWriteCore ? (
+            <div className="grid gap-2 sm:grid-cols-2">
+              <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+                Площадка
+                <select
+                  value={socialDraft}
+                  onChange={(e) => setSocialDraft(e.target.value)}
+                  onBlur={saveDrawerBlur}
+                  className={`${selectClass} mt-1`}
+                >
+                  {socialOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+                Дата выхода
+                <input
+                  type="date"
+                  value={releaseDateDraft}
+                  onChange={(e) => setReleaseDateDraft(e.target.value)}
+                  onBlur={saveDrawerBlur}
+                  className={`${selectClass} mt-1`}
+                />
+              </label>
+              <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+                Время выхода
+                <input
+                  type="time"
+                  value={releaseTimeDraft}
+                  onChange={(e) => setReleaseTimeDraft(e.target.value)}
+                  onBlur={saveDrawerBlur}
+                  className={`${selectClass} mt-1`}
+                />
+              </label>
+              <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+                Бюджет, ₽
+                <input
+                  type="text"
+                  value={budgetDraft}
+                  onChange={(e) => setBudgetDraft(e.target.value)}
+                  onBlur={saveDrawerBlur}
+                  className={`${selectClass} mt-1 tabular-nums`}
+                />
+              </label>
+              <label className="text-[10px] uppercase tracking-wider text-app-fg/55">
+                Охваты
+                <input
+                  type="text"
+                  value={reachDraft}
+                  onChange={(e) => setReachDraft(e.target.value)}
+                  onBlur={saveDrawerBlur}
+                  className={`${selectClass} mt-1 tabular-nums`}
+                />
+              </label>
+              <label className="text-[10px] uppercase tracking-wider text-app-fg/55 sm:col-span-2">
+                Ссылка на интеграцию
+                <input
+                  type="url"
+                  inputMode="url"
+                  autoComplete="url"
+                  value={linkDraft}
+                  onChange={(e) => setLinkDraft(e.target.value)}
+                  onBlur={saveDrawerBlur}
+                  placeholder="https://… пост, ролик, сторис"
+                  className={`${selectClass} mt-1 font-mono text-[13px]`}
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {publicHref || row.publicLink?.trim() ? (
+            <div className="space-y-1">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-app-fg/50">
+                {canWriteCore ? "Открыть ссылку" : "Ссылка на материал"}
+              </p>
+              {publicHref ? (
+                <a
+                  href={publicHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="break-all font-mono text-[13px] text-app-accent transition hover:underline"
+                >
+                  {row.publicLink?.trim()}
+                </a>
+              ) : (
+                <span className="break-all font-mono text-[13px] text-app-fg/80">
+                  {row.publicLink?.trim()}
+                </span>
+              )}
+            </div>
+          ) : canWriteCore ? null : (
+            <p className="text-xs text-app-fg/50">Ссылка на материал не указана</p>
+          )}
+
+          {canWriteCore ? (
+            <button
+              type="button"
+              onClick={handleDelete}
+              className="inline-flex items-center gap-2 border border-app-fg/15 px-3 py-2 text-xs text-app-fg/70 transition hover:border-red-500/40 hover:text-red-400"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+              Удалить
+            </button>
+          ) : null}
         </section>
       ) : null}
 
@@ -666,7 +760,7 @@ export function IntegrationDetailScreen({
           {canWriteCore && (
             <button
               type="button"
-              onClick={() => setIsAddPositionOpen((v) => !v)}
+              onClick={() => (isAddPositionOpen ? setIsAddPositionOpen(false) : openAddPositionForm())}
               className="inline-flex items-center gap-1.5 border border-app-fg/20 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-accent/50 hover:bg-app-accent/10"
             >
               <Plus className="h-3.5 w-3.5" strokeWidth={2} />
@@ -709,7 +803,10 @@ export function IntegrationDetailScreen({
                           <td className="px-3 py-2 text-app-fg/70">{posSocial?.label ?? "—"}</td>
                           <td className="px-3 py-2 text-app-fg/70">{pos.releaseDate ? formatCalendarDate(pos.releaseDate) : "—"}</td>
                           <td className="px-3 py-2 text-right tabular-nums">
-                            {pos.budget != null ? formatRuMoney(pos.budget) : "—"}
+                            {(() => {
+                              const b = positionDisplayBudgetRub(pos, row);
+                              return b != null ? formatRuMoney(b) : "—";
+                            })()}
                           </td>
                           {canWriteCore && (
                             <td className="px-3 py-2">
@@ -727,14 +824,14 @@ export function IntegrationDetailScreen({
                       );
                     })}
                   </tbody>
-                  {(row.positions ?? []).some((p) => p.budget != null) && (
+                  {integrationEffectiveBudgetRub(row) != null && (
                     <tfoot>
                       <tr className="border-t border-app-fg/15 font-semibold">
                         <td className="px-3 py-2 text-[10px] uppercase tracking-wide text-app-fg/55" colSpan={4}>
                           Итого
                         </td>
                         <td className="px-3 py-2 text-right tabular-nums">
-                          {formatRuMoney((row.positions ?? []).reduce((s, p) => s + (p.budget ?? 0), 0))}
+                          {formatIntegrationBudgetCell(row)}
                         </td>
                         {canWriteCore && <td />}
                       </tr>
@@ -746,102 +843,67 @@ export function IntegrationDetailScreen({
 
             {canWriteCore && isAddPositionOpen && (
               <form onSubmit={handleAddPosition} className="space-y-3 border border-app-fg/15 p-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-fg/45">Новая позиция</p>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-app-fg/45">
+                    Новая позиция
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-app-fg/50">
+                    Площадка, дата, контрагент, статус и сотрудник подставятся из интеграции — укажите
+                    только товар или формат выхода.
+                  </p>
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Название *</label>
+                  <div className="sm:col-span-2">
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">
+                      Название *
+                    </label>
                     <input
                       required
+                      autoFocus
                       value={posTitleDraft}
                       onChange={(e) => setPosTitleDraft(e.target.value)}
-                      placeholder="Название позиции"
+                      placeholder="Например: джерси Light Classic M чёрный"
                       className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
                     />
                   </div>
                   <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Статус</label>
-                    <select
-                      value={posStatusDraft}
-                      onChange={(e) => setPosStatusDraft(e.target.value as IntegrationStatus)}
-                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                    >
-                      {INTEGRATION_STATUSES.map((s) => (
-                        <option key={s} value={s}>{INTEGRATION_STATUS_LABELS[s]}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Площадка</label>
-                    <select
-                      value={posSocialDraft}
-                      onChange={(e) => setPosSocialDraft(e.target.value)}
-                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                    >
-                      <option value="">— любая —</option>
-                      {socialOptions.map((o) => (
-                        <option key={o.id} value={o.id}>{o.label}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Контрагент</label>
-                    <select
-                      value={posContractorDraft}
-                      onChange={(e) => setPosContractorDraft(e.target.value)}
-                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                    >
-                      <option value="">— из интеграции —</option>
-                      {contractors.map((c) => (
-                        <option key={c.id} value={c.id}>{c.contactPerson?.trim() || c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Условия</label>
-                    <select
-                      value={posCoopDraft}
-                      onChange={(e) => setPosCoopDraft(e.target.value as IntegrationCooperationType | "")}
-                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                    >
-                      <option value="">— не указаны —</option>
-                      {INTEGRATION_COOPERATION_TYPES.map((t) => (
-                        <option key={t} value={t}>{INTEGRATION_COOPERATION_LABELS[t]}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Сотрудник</label>
-                    <select
-                      value={posEmployeeDraft}
-                      onChange={(e) => setPosEmployeeDraft(e.target.value)}
-                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                    >
-                      <option value="">— не назначен —</option>
-                      {employees.map((e) => (
-                        <option key={e.id} value={e.id}>{e.fullName}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Дата (ГГГГ-ММ-ДД)</label>
-                    <input
-                      type="date"
-                      value={posDateDraft}
-                      onChange={(e) => setPosDateDraft(e.target.value)}
-                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">Бюджет, ₽</label>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">
+                      Бюджет позиции, ₽
+                    </label>
                     <input
                       type="text"
+                      inputMode="decimal"
                       value={posBudgetDraft}
                       onChange={(e) => setPosBudgetDraft(e.target.value)}
-                      placeholder="0"
+                      placeholder="необязательно"
                       className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
                     />
                   </div>
                 </div>
+                <dl className="grid gap-1 text-[11px] text-app-fg/55 sm:grid-cols-2">
+                  <div>
+                    <dt className="inline after:content-[':']">Площадка</dt>
+                    <dd className="inline text-app-fg/80"> {socialLabel}</dd>
+                  </div>
+                  <div>
+                    <dt className="inline after:content-[':']">Дата</dt>
+                    <dd className="inline text-app-fg/80">
+                      {" "}
+                      {row.releaseDate ? formatCalendarDate(row.releaseDate) : "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="inline after:content-[':']">Контрагент</dt>
+                    <dd className="inline text-app-fg/80">
+                      {" "}
+                      {contractor?.contactPerson?.trim() || contractor?.name || "—"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="inline after:content-[':']">Сотрудник</dt>
+                    <dd className="inline text-app-fg/80"> {assignee?.fullName ?? "—"}</dd>
+                  </div>
+                </dl>
                 <div className="flex gap-2">
                   <button
                     type="submit"
@@ -851,7 +913,10 @@ export function IntegrationDetailScreen({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setIsAddPositionOpen(false)}
+                    onClick={() => {
+                      resetPositionForm();
+                      setIsAddPositionOpen(false);
+                    }}
                     className="border border-app-fg/15 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg/60 transition hover:border-app-fg/30"
                   >
                     Отмена
