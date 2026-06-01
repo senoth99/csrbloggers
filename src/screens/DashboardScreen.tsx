@@ -14,6 +14,8 @@ import {
   deliveriesCreatedInMonth,
   formatYearMonthString,
   integrationReachByCalendarDayInMonth,
+  latestYearMonthWithIntegrations,
+  monthTitleRu,
   integrationsAgreementsInMonth,
   integrationsPublishedInMonth,
   integrationsWithReleaseInMonth,
@@ -165,6 +167,17 @@ export function DashboardScreen() {
     [releaseMonth],
   );
 
+  const suggestedYm = useMemo(
+    () => latestYearMonthWithIntegrations(integrations),
+    [integrations],
+  );
+  const monthHasNoIntegrations =
+    integrations.length > 0 && releaseMonth.length === 0;
+  const showSuggestedMonth =
+    monthHasNoIntegrations &&
+    suggestedYm != null &&
+    formatYearMonthString(suggestedYm) !== formatYearMonthString(ym);
+
   function handleExportThisMonth() {
     const month = ym;
     const intRows = integrationsPublishedInMonth(integrations, month).map((i) => [
@@ -266,6 +279,25 @@ export function DashboardScreen() {
           </button>
         </div>
       </div>
+
+      {monthHasNoIntegrations ? (
+        <p className="border border-dashed border-amber-500/30 bg-amber-500/5 px-4 py-3 text-sm leading-relaxed text-app-fg/70">
+          За {monthTitleRu(ym)} нет интеграций — ни с датой выхода в этом месяце, ни созданных в
+          нём. Проверьте дату выхода в карточках или выберите другой месяц.
+          {showSuggestedMonth ? (
+            <>
+              {" "}
+              <button
+                type="button"
+                onClick={() => setMonth(suggestedYm!)}
+                className="font-medium text-app-accent underline underline-offset-2 hover:brightness-125"
+              >
+                Открыть {monthTitleRu(suggestedYm!)}
+              </button>
+            </>
+          ) : null}
+        </p>
+      ) : null}
 
       <DashboardChartSection title="Ключевые показатели">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">

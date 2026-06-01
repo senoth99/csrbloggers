@@ -70,14 +70,13 @@ export function integrationReleaseYmds(integration: Integration): string[] {
 }
 
 /**
- * Месяц для KPI дашборда: любая дата выхода (интеграция/позиции) в месяце;
- * если дат выхода нет — месяц создания (legacy).
+ * Месяц для KPI дашборда: дата выхода (интеграция/позиции) в месяце
+ * или месяц создания записи (чтобы новые строки без releaseDate не терялись).
  */
 export function integrationInDashboardMonth(integration: Integration, ym: YearMonth): boolean {
   const ymds = integrationReleaseYmds(integration);
   if (ymds.some((d) => ymdInYearMonth(d, ym))) return true;
-  if (ymds.length === 0) return isoInYearMonth(integration.createdAt, ym);
-  return false;
+  return dateIsoInYearMonth(integration.createdAt, ym);
 }
 
 /** День месяца (1…n) для графика охватов; null если интеграция не в этом месяце. */
@@ -91,13 +90,42 @@ function integrationDayOfMonthInDashboardMonth(
     const dayMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
     if (dayMatch) return Number(dayMatch[3]);
   }
-  if (integrationReleaseYmds(integration).length === 0 && integration.createdAt) {
+  if (integration.createdAt && dateIsoInYearMonth(integration.createdAt, ym)) {
     const t = new Date(integration.createdAt);
-    if (!Number.isNaN(t.getTime()) && isoInYearMonth(integration.createdAt, ym)) {
+    if (!Number.isNaN(t.getTime())) {
+      const prefix = /^\d{4}-\d{2}-\d{2}/.exec(integration.createdAt.trim());
+      if (prefix) {
+        const dayMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(prefix[0]);
+        if (dayMatch) return Number(dayMatch[3]);
+      }
       return t.getUTCDate();
     }
   }
   return null;
+}
+
+/** Последний календарный месяц, в котором есть хотя бы одна интеграция по KPI-логике. */
+export function latestYearMonthWithIntegrations(
+  integrations: Integration[],
+): YearMonth | null {
+  let best: { ym: YearMonth; t: number } | null = null;
+  for (const i of integrations) {
+    const candidates: string[] = [...integrationReleaseYmds(i)];
+    if (i.createdAt?.trim()) candidates.push(i.createdAt.trim());
+    for (const raw of candidates) {
+      const ymd = /^\d{4}-\d{2}-\d{2}/.exec(raw.trim());
+      const anchor = ymd ? ymd[0] : raw;
+      const d = new Date(anchor);
+      if (Number.isNaN(d.getTime())) continue;
+      const ym: YearMonth = {
+        year: ymd ? Number(ymd[0].slice(0, 4)) : d.getUTCFullYear(),
+        month: ymd ? Number(ymd[0].slice(5, 7)) : d.getUTCMonth() + 1,
+      };
+      const t = new Date(ym.year, ym.month - 1, 1).getTime();
+      if (!best || t > best.t) best = { ym, t };
+    }
+  }
+  return best?.ym ?? null;
 }
 
 export function monthTitleRu(ym: YearMonth): string {
