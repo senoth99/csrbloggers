@@ -11,7 +11,13 @@ import {
   integrationReachTaskKey,
   integrationReleaseVerifyTaskKey,
 } from "@/lib/panel-tasks";
+import { CasherProductPickerModal } from "@/components/CasherProductPickerModal";
 import { ContractorListModal } from "@/components/ContractorListModal";
+import { useCasherProducts } from "@/hooks/useCasherProducts";
+import {
+  casherProductSizeOptions,
+  formatCasherProductPositionTitle,
+} from "@/lib/casher-products";
 import { CrmPill } from "@/components/CrmPill";
 import {
   CHANNEL_BADGE_CLASS,
@@ -53,6 +59,8 @@ const nfReach = new Intl.NumberFormat("ru-RU", {
 });
 
 const selectClass = `w-full min-w-0 border border-app-fg/15 bg-app-bg px-3 py-2.5 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2 ${selectNativeChevronPad}`;
+
+const pickerFieldClass = `${selectClass} text-left`;
 
 const textareaClass = `${selectClass} min-h-[120px] resize-y leading-relaxed`;
 
@@ -156,8 +164,16 @@ export function IntegrationDetailScreen({
   );
 
   const [isAddPositionOpen, setIsAddPositionOpen] = useState(false);
-  const [posTitleDraft, setPosTitleDraft] = useState("");
+  const [posProductId, setPosProductId] = useState("");
+  const [posSize, setPosSize] = useState("");
+  const [posProductSearch, setPosProductSearch] = useState("");
+  const [isPosProductPickerOpen, setIsPosProductPickerOpen] = useState(false);
   const [posBudgetDraft, setPosBudgetDraft] = useState("");
+  const {
+    products: casherProducts,
+    loading: casherProductsLoading,
+    error: casherProductsError,
+  } = useCasherProducts(isAddPositionOpen);
 
   const row = integrations.find((i) => i.id === integrationId);
   const contractor = contractors.find((c) => c.id === row?.contractorId);
@@ -294,8 +310,20 @@ export function IntegrationDetailScreen({
     onClose?.();
   }, [isDrawer, canWriteCore, row, saveDrawerBlur, onClose]);
 
+  const posSelectedProduct = useMemo(
+    () => casherProducts.find((p) => String(p.id ?? "") === posProductId),
+    [casherProducts, posProductId],
+  );
+  const posSizeOptions = useMemo(
+    () => casherProductSizeOptions(posSelectedProduct),
+    [posSelectedProduct],
+  );
+
   const resetPositionForm = useCallback(() => {
-    setPosTitleDraft("");
+    setPosProductId("");
+    setPosSize("");
+    setPosProductSearch("");
+    setIsPosProductPickerOpen(false);
     setPosBudgetDraft("");
   }, []);
 
@@ -413,8 +441,10 @@ export function IntegrationDetailScreen({
 
   function handleAddPosition(e: React.FormEvent) {
     e.preventDefault();
-    const titleTrim = posTitleDraft.trim();
-    if (!titleTrim || !row) return;
+    if (!row || !posSelectedProduct || !posSize.trim()) return;
+    const productName = (posSelectedProduct.name ?? "").trim();
+    if (!productName) return;
+    const titleTrim = formatCasherProductPositionTitle(productName, posSize);
     const budget = parseBudgetReachField(posBudgetDraft);
     addIntegrationPosition(row.id, {
       title: titleTrim,
@@ -479,7 +509,7 @@ export function IntegrationDetailScreen({
               </CrmPill>
             )}
           </div>
-          {onClose ? (
+          {onClose && !isContractorPickerOpen && !isPosProductPickerOpen ? (
             <button
               type="button"
               onClick={handleDrawerClose}
@@ -854,23 +884,48 @@ export function IntegrationDetailScreen({
                     Новая позиция
                   </p>
                   <p className="mt-1 text-xs leading-relaxed text-app-fg/50">
-                    Площадка, дата, контрагент, статус и сотрудник подставятся из интеграции — укажите
-                    только товар или формат выхода.
+                    Площадка, дата, контрагент, статус и сотрудник подставятся из интеграции — выберите
+                    вещь из каталога и размер.
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="sm:col-span-2">
                     <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">
-                      Название *
+                      Вещь *
                     </label>
-                    <input
+                    <button
+                      type="button"
+                      onClick={() => setIsPosProductPickerOpen(true)}
+                      disabled={casherProductsLoading || casherProducts.length === 0}
+                      className={`${pickerFieldClass} mt-1 disabled:opacity-50`}
+                    >
+                      <span className="line-clamp-1">
+                        {casherProductsLoading
+                          ? "Загрузка каталога…"
+                          : casherProductsError
+                            ? casherProductsError
+                            : (posSelectedProduct?.name ?? "Нажмите для выбора вещи")}
+                      </span>
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">
+                      Размер *
+                    </label>
+                    <select
                       required
-                      autoFocus
-                      value={posTitleDraft}
-                      onChange={(e) => setPosTitleDraft(e.target.value)}
-                      placeholder="Например: джерси Light Classic M чёрный"
-                      className="mt-1 w-full border border-app-fg/15 bg-app-bg px-3 py-2 text-sm text-app-fg outline-none ring-app-accent/35 focus:ring-2"
-                    />
+                      value={posSize}
+                      onChange={(e) => setPosSize(e.target.value)}
+                      disabled={!posSelectedProduct}
+                      className={`${selectClass} mt-1`}
+                    >
+                      <option value="">Выбрать размер</option>
+                      {posSizeOptions.map((size) => (
+                        <option key={size} value={size}>
+                          {size}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                   <div>
                     <label className="block text-[10px] uppercase tracking-wider text-app-fg/55">
@@ -913,7 +968,8 @@ export function IntegrationDetailScreen({
                 <div className="flex gap-2">
                   <button
                     type="submit"
-                    className="border border-app-fg/20 bg-app-fg/[0.04] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-accent/50 hover:bg-app-accent/10"
+                    disabled={!posSelectedProduct || !posSize.trim()}
+                    className="border border-app-fg/20 bg-app-fg/[0.04] px-4 py-2 text-xs font-semibold uppercase tracking-wide text-app-fg transition hover:border-app-accent/50 hover:bg-app-accent/10 disabled:opacity-50"
                   >
                     Добавить
                   </button>
@@ -933,6 +989,21 @@ export function IntegrationDetailScreen({
           </div>
         )}
       </section>
+
+      <CasherProductPickerModal
+        open={isAddPositionOpen && isPosProductPickerOpen}
+        onClose={() => setIsPosProductPickerOpen(false)}
+        products={casherProducts}
+        search={posProductSearch}
+        onSearchChange={setPosProductSearch}
+        selectedProductId={posProductId}
+        onSelectProduct={(id) => {
+          setPosProductId(id);
+          setPosSize("");
+        }}
+        loading={casherProductsLoading}
+        error={casherProductsError}
+      />
 
       {canWriteCore && isEditOpen && !isDrawer ? (
         <div className={overlayClass} role="presentation" onClick={closeEdit}>
@@ -955,14 +1026,16 @@ export function IntegrationDetailScreen({
                   Изменения сохраняются в карточке после нажатия «Сохранить».
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={closeEdit}
-                className="border border-app-fg/15 p-2 text-app-fg/65 transition hover:border-app-fg/35"
-                aria-label="Закрыть"
-              >
-                <X className="h-4 w-4" strokeWidth={1.5} />
-              </button>
+              {!isContractorPickerOpen ? (
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  className="border border-app-fg/15 p-2 text-app-fg/65 transition hover:border-app-fg/35"
+                  aria-label="Закрыть"
+                >
+                  <X className="h-4 w-4" strokeWidth={1.5} />
+                </button>
+              ) : null}
             </div>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
@@ -1212,8 +1285,8 @@ export function IntegrationDetailScreen({
       <ContractorListModal
         open={isContractorPickerOpen}
         onClose={() => setIsContractorPickerOpen(false)}
-        contractors={contractors}
         zIndexClass="z-[70]"
+        contractors={contractors}
         onPick={(id) => {
           setContractorDraft(id);
           setSaveError(null);

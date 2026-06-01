@@ -19,6 +19,7 @@ import { useUndo } from "@/context/UndoContext";
 import { abbreviateFio, resolveSessionEmployeeId } from "@/lib/employee-utils";
 import { SortableTh } from "@/components/SortableTh";
 import {
+  ConfirmDeleteButton,
   FilterChips,
   HorizontalScrollTable,
   SlideOver,
@@ -273,6 +274,14 @@ function DeliveriesScreenInner() {
       updateDeliveryStatus(id, status);
     }
     setBulkStatusOpen(false);
+    setSelectedIds(new Set());
+  }
+
+  function handleBulkDelete() {
+    if (!isAdmin) return;
+    for (const id of Array.from(selectedIds)) {
+      removeDelivery(id);
+    }
     setSelectedIds(new Set());
   }
 
@@ -805,6 +814,16 @@ function DeliveriesScreenInner() {
           >
             Экспорт CSV
           </button>
+          {isAdmin ? (
+            <ConfirmDeleteButton
+              onConfirm={handleBulkDelete}
+              confirmLabel="Подтвердить удаление"
+              className="border border-app-fg/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-red-500/40 hover:text-red-400"
+              confirmClassName="border border-red-500/50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-red-400"
+            >
+              Удалить
+            </ConfirmDeleteButton>
+          ) : null}
         </div>
       ) : null}
 
@@ -934,6 +953,7 @@ function DeliveriesScreenInner() {
       <SlideOver
         open={isAddOpen && canWriteCore}
         onClose={closeAddModal}
+        hideHeader={isContractorPickerOpen}
         title="Добавить трек"
         widthClass="sm:max-w-lg"
         footer={

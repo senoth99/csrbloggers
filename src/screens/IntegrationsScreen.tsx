@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { Plus, Search, ChevronDown, X } from "lucide-react";
 import { IntegrationDetailScreen } from "@/screens/IntegrationDetailScreen";
-import { FilterChips, SlideOver, StatusBadgeDropdown } from "@/components/ui";
+import { ConfirmDeleteButton, FilterChips, SlideOver, StatusBadgeDropdown } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { usePanelData } from "@/context/PanelDataContext";
 import { abbreviateFio, findEmployeeIdByPanelSession } from "@/lib/employee-utils";
@@ -105,6 +105,7 @@ export function IntegrationsScreen() {
     canWriteCore,
     addIntegration,
     updateIntegration,
+    removeIntegration,
   } = usePanelData();
 
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -413,6 +414,14 @@ export function IntegrationsScreen() {
       updateIntegration(id, { status });
     }
     setBulkStatusOpen(false);
+    setSelectedIds(new Set());
+  }
+
+  function handleBulkDelete() {
+    if (!isAdmin) return;
+    for (const id of Array.from(selectedIds)) {
+      removeIntegration(id);
+    }
     setSelectedIds(new Set());
   }
 
@@ -898,6 +907,16 @@ export function IntegrationsScreen() {
           >
             Экспорт CSV
           </button>
+          {isAdmin ? (
+            <ConfirmDeleteButton
+              onConfirm={handleBulkDelete}
+              confirmLabel="Подтвердить удаление"
+              className="border border-app-fg/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-red-500/40 hover:text-red-400"
+              confirmClassName="border border-red-500/50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-red-400"
+            >
+              Удалить
+            </ConfirmDeleteButton>
+          ) : null}
         </div>
       ) : null}
 
@@ -1361,6 +1380,7 @@ export function IntegrationsScreen() {
       <SlideOver
         open={Boolean(canWriteCore && isAddOpen)}
         onClose={closeAddModal}
+        hideHeader={isContractorPickerOpen}
         title="Новая интеграция"
         footer={
           canAdd ? (

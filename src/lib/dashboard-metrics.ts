@@ -1,6 +1,7 @@
 import type { Delivery, Integration } from "@/types/panel-data";
 import { isAgreementIntegrationStatus, isPublishedIntegrationStatus } from "@/types/panel-data";
-import { computeCpmRub } from "@/lib/integration-metrics";
+import { computeCpmRub, integrationEffectiveBudgetRub } from "@/lib/integration-metrics";
+import { normalizeReleaseDateYmd } from "@/lib/release-date";
 
 export type YearMonth = { year: number; month: number };
 
@@ -30,6 +31,8 @@ export function formatYearMonthString(ym: YearMonth): string {
  * - `dateIsoInYearMonth` — сначала YYYY-MM-DD-префикс (как ymd), иначе isoInYearMonth.
  *
  * Не смешивайте оси: KPI «выход» → releaseDate + ymd; «создано» → createdAt + iso.
+ *
+ * KPI дашборда: `integrationInDashboardMonth` — releaseDate (и даты позиций), иначе createdAt.
  */
 export function isoInYearMonth(iso: string | undefined, ym: YearMonth): boolean {
   if (!iso?.trim()) return false;
@@ -52,6 +55,49 @@ export function dateIsoInYearMonth(iso: string | undefined, ym: YearMonth): bool
   const ymd = /^\d{4}-\d{2}-\d{2}/.exec(t);
   if (ymd) return ymdInYearMonth(ymd[0], ym);
   return isoInYearMonth(iso, ym);
+}
+
+/** Все нормализованные YYYY-MM-DD выхода: интеграция + позиции. */
+export function integrationReleaseYmds(integration: Integration): string[] {
+  const out: string[] = [];
+  const main = normalizeReleaseDateYmd(integration.releaseDate);
+  if (main) out.push(main);
+  for (const pos of integration.positions ?? []) {
+    const y = normalizeReleaseDateYmd(pos.releaseDate);
+    if (y) out.push(y);
+  }
+  return out;
+}
+
+/**
+ * Месяц для KPI дашборда: любая дата выхода (интеграция/позиции) в месяце;
+ * если дат выхода нет — месяц создания (legacy).
+ */
+export function integrationInDashboardMonth(integration: Integration, ym: YearMonth): boolean {
+  const ymds = integrationReleaseYmds(integration);
+  if (ymds.some((d) => ymdInYearMonth(d, ym))) return true;
+  if (ymds.length === 0) return isoInYearMonth(integration.createdAt, ym);
+  return false;
+}
+
+/** День месяца (1…n) для графика охватов; null если интеграция не в этом месяце. */
+function integrationDayOfMonthInDashboardMonth(
+  integration: Integration,
+  ym: YearMonth,
+): number | null {
+  if (!integrationInDashboardMonth(integration, ym)) return null;
+  for (const d of integrationReleaseYmds(integration)) {
+    if (!ymdInYearMonth(d, ym)) continue;
+    const dayMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+    if (dayMatch) return Number(dayMatch[3]);
+  }
+  if (integrationReleaseYmds(integration).length === 0 && integration.createdAt) {
+    const t = new Date(integration.createdAt);
+    if (!Number.isNaN(t.getTime()) && isoInYearMonth(integration.createdAt, ym)) {
+      return t.getUTCDate();
+    }
+  }
+  return null;
 }
 
 export function monthTitleRu(ym: YearMonth): string {
@@ -83,12 +129,12 @@ export function agreementsCreatedInMonth(
   ).length;
 }
 
-/** Интеграции с датой выхода (releaseDate) в календарном месяце (любой статус). */
+/** Интеграции в календарном месяце по дате выхода (см. integrationInDashboardMonth). */
 export function integrationsWithReleaseInMonth(
   integrations: Integration[],
   ym: YearMonth,
 ): Integration[] {
-  return integrations.filter((i) => ymdInYearMonth(i.releaseDate, ym));
+  return integrations.filter((i) => integrationInDashboardMonth(i, ym));
 }
 
 /** Договорённости с releaseDate в месяце (черновик / перенос). */
@@ -107,7 +153,7 @@ export function integrationsPublishedInMonth(
   ym: YearMonth,
 ): Integration[] {
   return integrations.filter(
-    (i) => isPublishedIntegrationStatus(i.status) && ymdInYearMonth(i.releaseDate, ym),
+    (i) => isPublishedIntegrationStatus(i.status) && integrationInDashboardMonth(i, ym),
   );
 }
 
@@ -121,11 +167,8 @@ export function integrationReachByCalendarDayInMonth(
   const n = daysInYearMonth(ym);
   const out = Array.from({ length: n }, () => 0);
   for (const i of integrations) {
-    const rd = i.releaseDate?.trim();
-    if (!rd || !ymdInYearMonth(rd, ym)) continue;
-    const dayMatch = /^\d{4}-\d{2}-(\d{2})$/.exec(rd);
-    if (!dayMatch) continue;
-    const dayOfMonth = Number(dayMatch[1]);
+    const dayOfMonth = integrationDayOfMonthInDashboardMonth(i, ym);
+    if (dayOfMonth == null) continue;
     const idx = dayOfMonth - 1;
     if (idx < 0 || idx >= n) continue;
     if (i.reach != null && Number.isFinite(i.reach)) {
@@ -207,7 +250,8 @@ export function sumIntegrationReach(integrations: Integration[]): number {
 export function sumIntegrationBudget(integrations: Integration[]): number {
   let s = 0;
   for (const i of integrations) {
-    if (i.budget != null && Number.isFinite(i.budget)) s += i.budget;
+    const b = integrationEffectiveBudgetRub(i);
+    if (b != null && Number.isFinite(b)) s += b;
   }
   return s;
 }
@@ -227,7 +271,7 @@ export const DASHBOARD_EMPTY_VALUE = "—";
 
 /** Есть ли хотя бы одна интеграция с заполненным бюджетом */
 export function integrationsHaveAnyBudget(integrations: Integration[]): boolean {
-  return integrations.some((i) => i.budget != null && Number.isFinite(i.budget));
+  return integrations.some((i) => integrationEffectiveBudgetRub(i) != null);
 }
 
 export function integrationsHaveAnyReach(integrations: Integration[]): boolean {

@@ -6,7 +6,13 @@ import { ChevronDown, Plus, Search, Trash2, X } from "lucide-react";
 import { usePanelData } from "@/context/PanelDataContext";
 import { ContractorRatingBadge } from "@/components/ContractorRatingBadge";
 import { SortableTh } from "@/components/SortableTh";
-import { FilterChips, HorizontalScrollTable, SlideOver, type FilterChip } from "@/components/ui";
+import {
+  ConfirmDeleteButton,
+  FilterChips,
+  HorizontalScrollTable,
+  SlideOver,
+  type FilterChip,
+} from "@/components/ui";
 import { ContractorDetailScreen } from "@/screens/ContractorDetailScreen";
 import { computeContractorRating10 } from "@/lib/contractor-rating";
 import { useTableSort } from "@/hooks/useTableSort";
@@ -72,6 +78,7 @@ function ContractorsScreenInner() {
     canWriteCore,
     addContractor,
     updateContractor,
+    removeContractor,
   } = usePanelData();
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [highlightId, setHighlightId] = useState<string | null>(null);
@@ -224,6 +231,14 @@ function ContractorsScreenInner() {
       updateContractor(id, { status });
     }
     setBulkStatusOpen(false);
+    setSelectedIds(new Set());
+  }
+
+  function handleBulkDelete() {
+    if (!isAdmin) return;
+    for (const id of Array.from(selectedIds)) {
+      removeContractor(id);
+    }
     setSelectedIds(new Set());
   }
 
@@ -516,6 +531,16 @@ function ContractorsScreenInner() {
           >
             Экспорт CSV
           </button>
+          {isAdmin ? (
+            <ConfirmDeleteButton
+              onConfirm={handleBulkDelete}
+              confirmLabel="Подтвердить удаление"
+              className="border border-app-fg/15 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-app-fg transition hover:border-red-500/40 hover:text-red-400"
+              confirmClassName="border border-red-500/50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-red-400"
+            >
+              Удалить
+            </ConfirmDeleteButton>
+          ) : null}
         </div>
       ) : null}
 

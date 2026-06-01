@@ -38,6 +38,7 @@ import {
   integrationPublicLinkHref,
   normalizeIntegrationPublicLink,
 } from "@/lib/integration-link";
+import { normalizeReleaseDateYmd } from "@/lib/release-date";
 import {
   coercePanelStoredShape,
   parseLegacyPromocodeSnapshots,
@@ -272,6 +273,17 @@ function migrateIntegration(
   };
   if (cooperationType) result.cooperationType = cooperationType;
   else delete (result as { cooperationType?: IntegrationCooperationType }).cooperationType;
+  if (Array.isArray(row.positions) && row.positions.length > 0) {
+    result.positions = row.positions.map((pos) => {
+      const next = { ...pos };
+      const ymd = parseReleaseDateInput(
+        typeof pos.releaseDate === "string" ? pos.releaseDate : undefined,
+      );
+      if (ymd) next.releaseDate = ymd;
+      else delete next.releaseDate;
+      return next;
+    });
+  }
   return result;
 }
 
@@ -294,9 +306,7 @@ function isIntegrationTitleTaken(
 }
 
 function parseReleaseDateInput(raw: string | undefined): string | undefined {
-  const v = raw?.trim() ?? "";
-  if (!v) return undefined;
-  return /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined;
+  return normalizeReleaseDateYmd(raw);
 }
 
 function parseReleaseTimeInput(raw: string | undefined): string | undefined {

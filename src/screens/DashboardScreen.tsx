@@ -15,9 +15,6 @@ import {
   formatYearMonthString,
   integrationReachByCalendarDayInMonth,
   integrationsAgreementsInMonth,
-  integrationsHaveAnyBudget,
-  integrationsHaveAnyPromoActivations,
-  integrationsHaveAnyReach,
   integrationsPublishedInMonth,
   integrationsWithReleaseInMonth,
   monthOverMonthTrend,
@@ -274,36 +271,24 @@ export function DashboardScreen() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
           <StatCard
             label="Договорённости"
-            value={
-              kpi.agreements > 0 ? kpi.agreements : DASHBOARD_EMPTY_VALUE
-            }
+            value={kpi.agreements}
             accent="accent"
-            trend={
-              kpi.agreements > 0
-                ? monthOverMonthTrend(kpi.agreements, kpi.agreementsPrev)
-                : undefined
-            }
+            trend={monthOverMonthTrend(kpi.agreements, kpi.agreementsPrev)}
           />
           <StatCard
             label="Опубликовано"
-            value={
-              kpi.published > 0 ? kpi.published : DASHBOARD_EMPTY_VALUE
-            }
-            trend={
-              kpi.published > 0
-                ? monthOverMonthTrend(kpi.published, kpi.publishedPrev)
-                : undefined
-            }
+            value={kpi.published}
+            trend={monthOverMonthTrend(kpi.published, kpi.publishedPrev)}
           />
           <StatCard
             label="Охваты"
             value={
-              integrationsHaveAnyReach(releaseMonth)
+              releaseMonth.length > 0
                 ? nfKpi.format(kpi.reach)
                 : DASHBOARD_EMPTY_VALUE
             }
             trend={
-              integrationsHaveAnyReach(releaseMonth)
+              releaseMonth.length > 0
                 ? monthOverMonthTrend(kpi.reach, kpi.reachPrev)
                 : undefined
             }
@@ -311,12 +296,12 @@ export function DashboardScreen() {
           <StatCard
             label="Бюджет"
             value={
-              integrationsHaveAnyBudget(releaseMonth)
+              releaseMonth.length > 0
                 ? `${formatRuMoney(kpi.budget)} ₽`
                 : DASHBOARD_EMPTY_VALUE
             }
             trend={
-              integrationsHaveAnyBudget(releaseMonth)
+              releaseMonth.length > 0
                 ? monthOverMonthTrend(kpi.budget, kpi.budgetPrev)
                 : undefined
             }
@@ -336,7 +321,7 @@ export function DashboardScreen() {
           <StatCard
             label="Активаций (ручной ввод)"
             value={
-              integrationsHaveAnyPromoActivations(releaseMonth)
+              releaseMonth.length > 0
                 ? nfKpi.format(manualPromoActivations)
                 : DASHBOARD_EMPTY_VALUE
             }
