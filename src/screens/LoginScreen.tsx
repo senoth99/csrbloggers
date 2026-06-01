@@ -50,8 +50,8 @@ function LoginForm() {
     setBusy(true);
     setLoginError(null);
     try {
-      const ok = await login(l, password);
-      if (!ok) setLoginError("Неверный логин или пароль.");
+      const err = await login(l, password);
+      if (err) setLoginError(err);
     } finally {
       setBusy(false);
     }

@@ -54,7 +54,8 @@ interface AuthContextValue {
   isTelegramStub: boolean;
   /** База недоступна или не настроена (503 от /api/auth/me) */
   authBackendError: string | null;
-  login: (login: string, password: string) => Promise<boolean>;
+  /** null — успех; иначе текст ошибки с API или общее сообщение */
+  login: (login: string, password: string) => Promise<string | null>;
   logout: () => Promise<void>;
   refreshUsers: () => Promise<void>;
   createPanelAccount: (input: {
@@ -148,18 +149,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       users.some((u) => normalizeUsername(u.login) === normalizeUsername(currentLogin)),
   );
 
-  const login = useCallback(async (rawLogin: string, password: string): Promise<boolean> => {
+  const login = useCallback(async (rawLogin: string, password: string): Promise<string | null> => {
     const loginNorm = normalizeUsername(rawLogin);
-    if (!loginNorm || !password) return false;
+    if (!loginNorm || !password) return "Укажите логин и пароль.";
     const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
       body: JSON.stringify({ login: loginNorm, password }),
     });
-    if (!res.ok) return false;
+    if (!res.ok) {
+      const j = (await res.json().catch(() => ({}))) as { error?: string };
+      return j.error ?? "Неверный логин или пароль.";
+    }
     await refreshUsers();
-    return true;
+    return null;
   }, [refreshUsers]);
 
   const logout = useCallback(async () => {

@@ -27,11 +27,6 @@ if (!envContent.includes("SESSION_SECRET=") || /SESSION_SECRET=[ \t]*(\r?\n|$)/.
   envContent = envContent.replace(/SESSION_SECRET=[ \t]*(\r?\n|$)/, "$1");
   missing.push(`SESSION_SECRET=${randomBytes(32).toString("hex")}`);
 }
-// Set a fixed dev password so the user always knows it
-if (!envContent.includes("SEED_ADMIN_PASSWORD=")) {
-  missing.push(`SEED_ADMIN_PASSWORD=admin`);
-}
-
 if (missing.length > 0) {
   appendFileSync(envPath, (envContent.endsWith("\n") || envContent === "" ? "" : "\n") + missing.join("\n") + "\n");
   console.log(`[dev-setup] Added to .env: ${missing.map((l) => l.split("=")[0]).join(", ")}`);

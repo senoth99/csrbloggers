@@ -10,7 +10,7 @@ export PORT="${PORT:-3000}"
 npm ci
 
 # Синхронизация SQLite со schema.prisma (новые колонки/таблицы после git pull).
-# Не трогает SEED — пароли не сбрасываются. Нужен .env с DATABASE_URL.
+# Seed не запускаем — пароли на проде не сбрасываются.
 if [ -f .env ] && grep -q '^DATABASE_URL=' .env; then
   echo "[deploy] prisma db push…"
   npx prisma db push
