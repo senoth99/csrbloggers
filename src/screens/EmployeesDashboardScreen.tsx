@@ -153,6 +153,10 @@ export function EmployeesDashboardScreen() {
             <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-app-fg/55">
               Лидерборд
             </h2>
+            <p className="mt-1 text-xs leading-relaxed text-app-fg/50">
+              Интеграции — закреплённые за сотрудником с датой выхода или созданием в выбранном
+              месяце. Доставки — полученные в месяце или созданные в месяце.
+            </p>
           </div>
           <ul className={listDivideClass}>
             {leaderboard.map((row) => (

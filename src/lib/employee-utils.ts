@@ -1,9 +1,8 @@
 import type { Delivery, Employee, Integration } from "@/types/panel-data";
-import { isPublishedIntegrationStatus } from "@/types/panel-data";
 import {
   dateIsoInYearMonth,
+  integrationInDashboardMonth,
   shiftYearMonth,
-  ymdInYearMonth,
   type YearMonth,
 } from "@/lib/dashboard-metrics";
 
@@ -134,19 +133,20 @@ function employeeMonthStats(
   for (const i of integrations) {
     const id = i.assignedEmployeeId;
     if (!id || !ids.has(id)) continue;
-    if (!isPublishedIntegrationStatus(i.status)) continue;
-    if (!ymdInYearMonth(i.releaseDate, ym)) continue;
+    if (!integrationInDashboardMonth(i, ym)) continue;
     const s = stats.get(id)!;
     s.int += 1;
   }
   for (const d of deliveries) {
     const id = d.assignedEmployeeId;
     if (!id || !ids.has(id)) continue;
-    if (d.status !== "delivered") continue;
     const deliveredIso = d.deliveredAt ?? d.updatedAt;
-    if (!dateIsoInYearMonth(deliveredIso, ym)) continue;
     const s = stats.get(id)!;
-    s.del += 1;
+    if (d.status === "delivered" && dateIsoInYearMonth(deliveredIso, ym)) {
+      s.del += 1;
+    } else if (dateIsoInYearMonth(d.createdAt, ym)) {
+      s.del += 1;
+    }
   }
   return stats;
 }

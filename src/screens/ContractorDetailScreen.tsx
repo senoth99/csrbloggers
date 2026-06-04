@@ -39,6 +39,7 @@ import {
   type Contractor,
   type ContractorLink,
   type IntegrationStatus,
+  type SocialOption,
 } from "@/types/panel-data";
 import { ConfirmDeleteButton } from "@/components/ui";
 import {
@@ -1213,6 +1214,16 @@ export function ContractorDetailScreen({
                 </select>
               </label>
             </div>
+
+            <ContractorSocialLinksBlock
+              links={ownedLinks}
+              socialOptions={socialOptions}
+              canWrite={canWriteCore}
+              isAdmin={isAdmin}
+              onAdd={openAddLink}
+              onEdit={openEditLink}
+              onRemove={removeContractorLink}
+            />
           </div>
         ) : null}
 
@@ -1757,6 +1768,117 @@ function BackLink({ href }: { href: string }) {
       <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={1.5} />
       Назад к списку
     </Link>
+  );
+}
+
+function ContractorSocialLinksBlock({
+  links,
+  socialOptions,
+  canWrite,
+  isAdmin,
+  onAdd,
+  onEdit,
+  onRemove,
+}: {
+  links: ContractorLink[];
+  socialOptions: SocialOption[];
+  canWrite: boolean;
+  isAdmin: boolean;
+  onAdd: () => void;
+  onEdit: (row: ContractorLink) => void;
+  onRemove: (id: string) => void;
+}) {
+  const labelForTitle = useCallback(
+    (title: string) => {
+      const t = title.trim();
+      const hit = socialOptions.find(
+        (o) => o.label.trim().toLowerCase() === t.toLowerCase(),
+      );
+      return hit?.label ?? t;
+    },
+    [socialOptions],
+  );
+
+  return (
+    <div className="border-t border-app-fg/10 pt-4 sm:col-span-2">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-app-fg/55">
+          Соцсети и ссылки
+        </h3>
+        {canWrite ? (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex items-center gap-1.5 border border-app-fg/20 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-app-fg/80 transition hover:border-app-accent/40"
+          >
+            <Plus className="h-3 w-3" strokeWidth={2} />
+            Добавить
+          </button>
+        ) : null}
+      </div>
+
+      {links.length === 0 ? (
+        <p className="border border-dashed border-app-fg/15 px-4 py-4 text-sm text-app-fg/55">
+          Ссылок на соцсети пока нет.
+          {canWrite ? " Нажмите «Добавить» или укажите их при создании контрагента." : ""}
+        </p>
+      ) : (
+        <ul className="space-y-2">
+          {links.map((item) => {
+            const href = integrationPublicLinkHref(item.url);
+            const platformLabel = labelForTitle(item.title);
+            return (
+              <li
+                key={item.id}
+                className="flex flex-col gap-2 border border-app-fg/10 bg-app-fg/[0.02] px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 flex-1">
+                  <CrmPill className={CHANNEL_BADGE_CLASS}>{platformLabel}</CrmPill>
+                  {href ? (
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1.5 block break-all font-mono text-[13px] text-app-accent transition hover:underline"
+                    >
+                      {item.url}
+                    </a>
+                  ) : (
+                    <span className="mt-1.5 block break-all font-mono text-[13px] text-app-fg/70">
+                      {item.url}
+                    </span>
+                  )}
+                </div>
+                {canWrite || isAdmin ? (
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    {canWrite ? (
+                      <button
+                        type="button"
+                        onClick={() => onEdit(item)}
+                        className="inline-flex items-center gap-1 border border-app-fg/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-app-fg/75 transition hover:border-app-fg/35"
+                      >
+                        <Pencil className="h-3 w-3" strokeWidth={1.75} />
+                        Изменить
+                      </button>
+                    ) : null}
+                    {isAdmin ? (
+                      <ConfirmDeleteButton
+                        onConfirm={() => onRemove(item.id)}
+                        confirmLabel="?"
+                        className="inline-flex items-center gap-1 border border-app-fg/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-app-fg/75 transition hover:border-app-fg/35"
+                        confirmClassName="inline-flex items-center gap-1 border border-red-500/50 px-2 py-1 text-[10px] font-semibold uppercase text-red-300"
+                      >
+                        <Trash2 className="h-3 w-3" strokeWidth={1.5} aria-hidden />
+                      </ConfirmDeleteButton>
+                    ) : null}
+                  </div>
+                ) : null}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
   );
 }
 

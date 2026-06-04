@@ -432,7 +432,7 @@ export function IntegrationsScreen() {
       "Заголовок",
       "Статус",
       "Контрагент",
-      "Площадка",
+      "Соцсеть",
       "Дата выхода",
       "Бюджет",
       "Охваты",
@@ -1114,16 +1114,6 @@ export function IntegrationsScreen() {
                   Статус
                 </SortableTh>
                 <SortableTh
-                  columnKey="platform"
-                  sortKey={sortKey}
-                  sortDir={sortDir}
-                  onSort={onPanelSort}
-                  align="center"
-                  className="min-w-0 px-2 py-2.5 align-middle max-md:w-[20%] max-md:whitespace-nowrap"
-                >
-                  Площадка
-                </SortableTh>
-                <SortableTh
                   columnKey="title"
                   sortKey={sortKey}
                   sortDir={sortDir}
@@ -1196,6 +1186,16 @@ export function IntegrationsScreen() {
                   className="hidden min-w-0 py-2.5 px-2 align-middle md:table-cell"
                 >
                   Сотрудник
+                </SortableTh>
+                <SortableTh
+                  columnKey="platform"
+                  sortKey={sortKey}
+                  sortDir={sortDir}
+                  onSort={onPanelSort}
+                  align="center"
+                  className="hidden min-w-0 whitespace-nowrap px-2 py-2.5 align-middle md:table-cell"
+                >
+                  Соцсеть
                 </SortableTh>
                 <SortableTh
                   columnKey="release"
@@ -1293,18 +1293,18 @@ export function IntegrationsScreen() {
                         </CrmPill>
                       )}
                     </td>
-                    <td className="min-w-0 px-2 py-2.5 text-center align-middle max-md:w-[20%] max-md:whitespace-nowrap">
-                      <CrmPill className={CHANNEL_BADGE_CLASS}>
-                        {social?.label ?? row.socialNetworkId}
-                      </CrmPill>
-                    </td>
                     <td className="min-w-0 truncate px-2 py-2.5 align-middle max-md:w-[36%]">
-                      <span
-                        className="block min-w-0 truncate font-medium text-app-fg"
-                        title={row.title ?? undefined}
-                      >
-                        {row.title}
-                      </span>
+                      <div className="flex min-w-0 items-center gap-1.5">
+                        <CrmPill className={`${CHANNEL_BADGE_CLASS} shrink-0 md:hidden`}>
+                          {social?.label ?? row.socialNetworkId ?? "—"}
+                        </CrmPill>
+                        <span
+                          className="block min-w-0 truncate font-medium text-app-fg"
+                          title={row.title ?? undefined}
+                        >
+                          {row.title}
+                        </span>
+                      </div>
                     </td>
                     <td className="hidden min-w-0 whitespace-nowrap px-2 py-2.5 text-right align-middle tabular-nums text-app-fg/55 md:table-cell">
                       {formatRuDate(created)}
@@ -1326,6 +1326,11 @@ export function IntegrationsScreen() {
                     </td>
                     <td className="hidden min-w-0 truncate px-2 py-2.5 align-middle text-[10px] text-app-fg/75 sm:text-xs md:table-cell">
                       {assignee ? abbreviateFio(assignee.fullName) : "—"}
+                    </td>
+                    <td className="hidden min-w-0 px-2 py-2.5 text-center align-middle whitespace-nowrap md:table-cell">
+                      <CrmPill className={CHANNEL_BADGE_CLASS}>
+                        {social?.label ?? row.socialNetworkId ?? "—"}
+                      </CrmPill>
                     </td>
                     <td
                       className="min-w-0 truncate px-2 py-2.5 align-middle text-[10px] tabular-nums text-app-fg/70 max-md:w-[18%] max-md:text-left max-md:whitespace-nowrap md:text-right sm:text-xs"
