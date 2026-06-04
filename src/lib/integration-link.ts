@@ -1,3 +1,5 @@
+import type { ContractorLink, Integration, SocialOption } from "@/types/panel-data";
+
 const MAX_LEN = 2048;
 
 /** Сохраняемая строка: обрезка пробелов и длины */
@@ -22,4 +24,39 @@ export function integrationPublicLinkHref(stored: string | undefined | null): st
   } catch {
     return null;
   }
+}
+
+/** Ссылка контрагента на площадку (по подписи = label соцсети). */
+export function contractorSocialLinkUrl(
+  contractorId: string,
+  socialNetworkId: string,
+  contractorLinks: ContractorLink[],
+  socialOptions: SocialOption[],
+): string | undefined {
+  const label = socialOptions
+    .find((o) => o.id === socialNetworkId)
+    ?.label?.trim()
+    .toLowerCase();
+  if (!label) return undefined;
+  const row = contractorLinks.find(
+    (l) =>
+      l.contractorId === contractorId && l.title.trim().toLowerCase() === label,
+  );
+  return row?.url?.trim() || undefined;
+}
+
+/** Ссылка на материал интеграции или профиль блогера на выбранной площадке. */
+export function integrationDisplayLink(
+  integration: Integration,
+  contractorLinks: ContractorLink[],
+  socialOptions: SocialOption[],
+): string | undefined {
+  const direct = integration.publicLink?.trim();
+  if (direct) return direct;
+  return contractorSocialLinkUrl(
+    integration.contractorId,
+    integration.socialNetworkId,
+    contractorLinks,
+    socialOptions,
+  );
 }

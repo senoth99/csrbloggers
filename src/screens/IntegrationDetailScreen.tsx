@@ -40,7 +40,10 @@ import {
   formatRuMoney,
   formatRuTime,
 } from "@/lib/format-ru";
-import { integrationPublicLinkHref } from "@/lib/integration-link";
+import {
+  integrationDisplayLink,
+  integrationPublicLinkHref,
+} from "@/lib/integration-link";
 import { computeContractorRating10 } from "@/lib/contractor-rating";
 import { ContractorRatingBadge } from "@/components/ContractorRatingBadge";
 import {
@@ -128,6 +131,7 @@ export function IntegrationDetailScreen({
   const isDrawer = variant === "drawer";
   const {
     contractors,
+    contractorLinks,
     integrations,
     contractorItems,
     socialOptions,
@@ -177,6 +181,10 @@ export function IntegrationDetailScreen({
 
   const row = integrations.find((i) => i.id === integrationId);
   const contractor = contractors.find((c) => c.id === row?.contractorId);
+  const contractorSocialLinks = useMemo(() => {
+    if (!row?.contractorId) return [];
+    return contractorLinks.filter((l) => l.contractorId === row.contractorId);
+  }, [contractorLinks, row?.contractorId]);
   const assignee = row?.assignedEmployeeId
     ? employees.find((e) => e.id === row.assignedEmployeeId)
     : undefined;
@@ -465,7 +473,10 @@ export function IntegrationDetailScreen({
   const budgetLive = draftOrSaved(isEditOpen || isDrawer, budgetDraft, row.budget);
   const reachLive = draftOrSaved(isEditOpen || isDrawer, reachDraft, row.reach);
   const cpmRub = computeCpmRub(budgetLive, reachLive);
-  const publicHref = integrationPublicLinkHref(row.publicLink);
+  const materialLink = row
+    ? integrationDisplayLink(row, contractorLinks, socialOptions)
+    : undefined;
+  const publicHref = integrationPublicLinkHref(materialLink);
 
   const shellClass = isDrawer
     ? "w-full space-y-4 p-4 pb-6"
@@ -557,16 +568,45 @@ export function IntegrationDetailScreen({
       {isDrawer ? (
         <section className="space-y-3">
           {contractor ? (
-            <p className="text-xs text-app-fg/55">
-              Контрагент:{" "}
-              <Link
-                href={`/contractors?${new URLSearchParams({ id: contractor.id }).toString()}`}
-                className="font-medium text-app-fg transition hover:text-app-accent"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {(contractor.contactPerson?.trim() || contractor.name).toUpperCase()} · {contractor.name}
-              </Link>
-            </p>
+            <div className="space-y-2 text-xs text-app-fg/55">
+              <p>
+                Контрагент:{" "}
+                <Link
+                  href={`/contractors?${new URLSearchParams({ id: contractor.id }).toString()}`}
+                  className="font-medium text-app-fg transition hover:text-app-accent"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {(contractor.contactPerson?.trim() || contractor.name).toUpperCase()} ·{" "}
+                  {contractor.name}
+                </Link>
+              </p>
+              {contractorSocialLinks.length > 0 ? (
+                <ul className="flex flex-wrap gap-2">
+                  {contractorSocialLinks.map((item) => {
+                    const href = integrationPublicLinkHref(item.url);
+                    return (
+                      <li key={item.id}>
+                        {href ? (
+                          <a
+                            href={href}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1.5 border border-app-fg/15 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-app-accent transition hover:border-app-accent/40"
+                          >
+                            <CrmPill className={CHANNEL_BADGE_CLASS}>{item.title}</CrmPill>
+                          </a>
+                        ) : (
+                          <span className="inline-flex items-center gap-1.5 border border-app-fg/15 px-2 py-1 text-[10px] text-app-fg/60">
+                            {item.title}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : null}
+            </div>
           ) : null}
 
           {canWriteCore ? (
@@ -642,10 +682,10 @@ export function IntegrationDetailScreen({
             </div>
           ) : null}
 
-          {publicHref || row.publicLink?.trim() ? (
+          {materialLink ? (
             <div className="space-y-1">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-app-fg/50">
-                {canWriteCore ? "Открыть ссылку" : "Ссылка на материал"}
+                {canWriteCore ? "Ссылка" : "Ссылка на материал"}
               </p>
               {publicHref ? (
                 <a
@@ -654,12 +694,10 @@ export function IntegrationDetailScreen({
                   rel="noopener noreferrer"
                   className="break-all font-mono text-[13px] text-app-accent transition hover:underline"
                 >
-                  {row.publicLink?.trim()}
+                  {materialLink}
                 </a>
               ) : (
-                <span className="break-all font-mono text-[13px] text-app-fg/80">
-                  {row.publicLink?.trim()}
-                </span>
+                <span className="break-all font-mono text-[13px] text-app-fg/80">{materialLink}</span>
               )}
             </div>
           ) : canWriteCore ? null : (
@@ -758,7 +796,7 @@ export function IntegrationDetailScreen({
             </InfoBlock>
           </div>
           <InfoBlock label="Ссылка на материал" className="sm:col-span-2">
-            {row.publicLink?.trim() ? (
+            {materialLink ? (
               publicHref ? (
                 <a
                   href={publicHref}
@@ -766,15 +804,43 @@ export function IntegrationDetailScreen({
                   rel="noopener noreferrer"
                   className="break-all font-mono text-[13px] text-app-fg transition"
                 >
-                  {row.publicLink.trim()}
+                  {materialLink}
                 </a>
               ) : (
-                <span className="break-all font-mono text-[13px] text-app-fg/80">{row.publicLink.trim()}</span>
+                <span className="break-all font-mono text-[13px] text-app-fg/80">{materialLink}</span>
               )
             ) : (
               <span className="text-app-fg/50">Не указана</span>
             )}
           </InfoBlock>
+          {contractorSocialLinks.length > 0 ? (
+            <InfoBlock label="Соцсети контрагента" className="sm:col-span-2">
+              <ul className="space-y-2">
+                {contractorSocialLinks.map((item) => {
+                  const href = integrationPublicLinkHref(item.url);
+                  return (
+                    <li key={item.id} className="flex flex-wrap items-center gap-2">
+                      <CrmPill className={CHANNEL_BADGE_CLASS}>{item.title}</CrmPill>
+                      {href ? (
+                        <a
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="min-w-0 break-all font-mono text-[13px] text-app-accent hover:underline"
+                        >
+                          {item.url}
+                        </a>
+                      ) : (
+                        <span className="break-all font-mono text-[13px] text-app-fg/70">
+                          {item.url}
+                        </span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </InfoBlock>
+          ) : null}
           <InfoBlock label="Комментарий" className="sm:col-span-2">
             {row.comment?.trim() || row.note?.trim() ? (
               <span className="whitespace-pre-wrap text-sm leading-relaxed text-app-fg">

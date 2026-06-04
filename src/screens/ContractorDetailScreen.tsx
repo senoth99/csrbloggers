@@ -179,7 +179,7 @@ export function ContractorDetailScreen({
   const [linksSearch, setLinksSearch] = useState("");
   const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [editingLinkId, setEditingLinkId] = useState<string | null>(null);
-  const [draftLinkTitle, setDraftLinkTitle] = useState("");
+  const [draftLinkSocialId, setDraftLinkSocialId] = useState("");
   const [draftLinkUrl, setDraftLinkUrl] = useState("");
   const [linkModalError, setLinkModalError] = useState<string | null>(null);
 
@@ -473,7 +473,7 @@ export function ContractorDetailScreen({
         setIsLinkModalOpen(false);
         setEditingLinkId(null);
         setLinkModalError(null);
-        setDraftLinkTitle("");
+        setDraftLinkSocialId("");
         setDraftLinkUrl("");
       }
     };
@@ -572,13 +572,13 @@ export function ContractorDetailScreen({
     setIsLinkModalOpen(false);
     setEditingLinkId(null);
     setLinkModalError(null);
-    setDraftLinkTitle("");
+    setDraftLinkSocialId("");
     setDraftLinkUrl("");
   }
 
   function openAddLink() {
     setEditingLinkId(null);
-    setDraftLinkTitle("");
+    setDraftLinkSocialId(socialOptions[0]?.id ?? "");
     setDraftLinkUrl("");
     setLinkModalError(null);
     setIsLinkModalOpen(true);
@@ -586,7 +586,10 @@ export function ContractorDetailScreen({
 
   function openEditLink(row: ContractorLink) {
     setEditingLinkId(row.id);
-    setDraftLinkTitle(row.title);
+    const match = socialOptions.find(
+      (o) => o.label.trim().toLowerCase() === row.title.trim().toLowerCase(),
+    );
+    setDraftLinkSocialId(match?.id ?? socialOptions[0]?.id ?? "");
     setDraftLinkUrl(row.url);
     setLinkModalError(null);
     setIsLinkModalOpen(true);
@@ -594,10 +597,11 @@ export function ContractorDetailScreen({
 
   function handleSaveLink() {
     if (!contractor) return;
-    const t = draftLinkTitle.trim();
+    const platform = socialOptions.find((o) => o.id === draftLinkSocialId);
+    const t = platform?.label.trim() ?? "";
     const u = draftLinkUrl.trim();
     if (!t) {
-      setLinkModalError("Укажите название.");
+      setLinkModalError("Выберите площадку.");
       return;
     }
     if (!u) {
@@ -1564,17 +1568,26 @@ export function ContractorDetailScreen({
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
               <div className="space-y-4">
                 <label className="block text-xs uppercase tracking-wider text-app-fg/55">
-                  Название
-                  <input
-                    value={draftLinkTitle}
+                  Площадка
+                  <select
+                    value={draftLinkSocialId}
                     onChange={(e) => {
-                      setDraftLinkTitle(e.target.value);
+                      setDraftLinkSocialId(e.target.value);
                       setLinkModalError(null);
                     }}
-                    className={`${selectClass} mt-1`}
-                    placeholder="Например, Twitch"
-                    autoComplete="off"
-                  />
+                    className={`${selectClass} mt-1 ${selectNativeChevronPad}`}
+                    required
+                  >
+                    {socialOptions.length === 0 ? (
+                      <option value="">Нет площадок в справочнике</option>
+                    ) : (
+                      socialOptions.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
                 </label>
                 <label className="block text-xs uppercase tracking-wider text-app-fg/55">
                   Ссылка

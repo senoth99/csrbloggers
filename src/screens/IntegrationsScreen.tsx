@@ -31,7 +31,12 @@ import {
   formatRuMoney,
   formatRuTime,
 } from "@/lib/format-ru";
-import { normalizeIntegrationPublicLink } from "@/lib/integration-link";
+import {
+  contractorSocialLinkUrl,
+  integrationDisplayLink,
+  integrationPublicLinkHref,
+  normalizeIntegrationPublicLink,
+} from "@/lib/integration-link";
 import {
   formatIntegrationBudgetCell,
   formatIntegrationPositionsCell,
@@ -97,6 +102,7 @@ export function IntegrationsScreen() {
   const { currentUsername } = useAuth();
   const {
     contractors,
+    contractorLinks,
     integrations,
     socialOptions,
     nicheOptions,
@@ -226,10 +232,21 @@ export function IntegrationsScreen() {
     setContractorId((prev) => prev || contractors[0]?.id || "");
   }, [isAddOpen, contractors]);
 
+  useEffect(() => {
+    if (!isAddOpen || !contractorId || !socialNetworkId) return;
+    const fromProfile = contractorSocialLinkUrl(
+      contractorId,
+      socialNetworkId,
+      contractorLinks,
+      socialOptions,
+    );
+    if (fromProfile) setLinkInput(fromProfile);
+  }, [isAddOpen, contractorId, socialNetworkId, contractorLinks, socialOptions]);
+
   function openAddModal() {
     setTitle("");
     setContractorId(contractors[0]?.id ?? "");
-    setSocialNetworkId("");
+    setSocialNetworkId(socialOptions[0]?.id ?? "");
     setStatus("draft");
     setReleaseDate("");
     setReleaseTime("");
@@ -1210,6 +1227,7 @@ export function IntegrationsScreen() {
                   </span>
                 </SortableTh>
                 <th className="hidden min-w-0 px-2 py-2.5 align-middle md:table-cell">Позиции</th>
+                <th className="hidden min-w-0 px-2 py-2.5 align-middle md:table-cell">Ссылка</th>
                 <th className="min-w-0 px-2 py-2.5 text-right align-middle tabular-nums max-md:w-[14%] md:table-cell">
                   Бюджет, ₽
                 </th>
@@ -1231,6 +1249,8 @@ export function IntegrationsScreen() {
                   ? INTEGRATION_COOPERATION_LABELS[row.cooperationType]
                   : "—";
                 const social = socialOptions.find((o) => o.id === row.socialNetworkId);
+                const displayLink = integrationDisplayLink(row, contractorLinks, socialOptions);
+                const displayLinkHref = integrationPublicLinkHref(displayLink);
                 const created = row.createdAt ?? "";
                 const assignee = row.assignedEmployeeId
                   ? byEmployee.get(row.assignedEmployeeId)
@@ -1304,6 +1324,27 @@ export function IntegrationsScreen() {
                         >
                           {row.title}
                         </span>
+                        {displayLink ? (
+                          displayLinkHref ? (
+                            <a
+                              href={displayLinkHref}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="mt-0.5 block min-w-0 truncate font-mono text-[10px] text-app-accent hover:underline sm:text-[11px]"
+                              title={displayLink}
+                            >
+                              {displayLink}
+                            </a>
+                          ) : (
+                            <span
+                              className="mt-0.5 block min-w-0 truncate font-mono text-[10px] text-app-fg/55 sm:text-[11px]"
+                              title={displayLink}
+                            >
+                              {displayLink}
+                            </span>
+                          )
+                        ) : null}
                       </div>
                     </td>
                     <td className="hidden min-w-0 whitespace-nowrap px-2 py-2.5 text-right align-middle tabular-nums text-app-fg/55 md:table-cell">
@@ -1347,6 +1388,24 @@ export function IntegrationsScreen() {
                       title={formatIntegrationPositionsCell(row)}
                     >
                       {formatIntegrationPositionsCell(row)}
+                    </td>
+                    <td
+                      className="hidden min-w-0 max-w-[12rem] px-2 py-2.5 align-middle md:table-cell"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {displayLink && displayLinkHref ? (
+                        <a
+                          href={displayLinkHref}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block truncate font-mono text-[11px] text-app-accent hover:underline"
+                          title={displayLink}
+                        >
+                          {displayLink}
+                        </a>
+                      ) : (
+                        <span className="text-app-fg/40">—</span>
+                      )}
                     </td>
                     <td className="min-w-0 px-2 py-2.5 text-right align-middle tabular-nums text-app-fg/80 max-md:w-[14%]">
                       {formatIntegrationBudgetCell(row)}
@@ -1481,6 +1540,19 @@ export function IntegrationsScreen() {
                   </label>
                 </div>
 
+                <label className="block text-xs uppercase tracking-wider text-app-fg/55">
+                  Ссылка на интеграцию
+                  <input
+                    type="url"
+                    inputMode="url"
+                    autoComplete="url"
+                    value={linkInput}
+                    onChange={(e) => setLinkInput(e.target.value)}
+                    placeholder="https://… или подставится из профиля блогера"
+                    className={`${fieldClass} mt-1 font-mono text-[13px]`}
+                  />
+                </label>
+
                 <div className="grid gap-3 sm:grid-cols-2">
                   <label className="block text-xs uppercase tracking-wider text-app-fg/55">
                     Дата выхода
@@ -1547,18 +1619,6 @@ export function IntegrationsScreen() {
                           onChange={(e) => setReachInput(e.target.value)}
                           placeholder="необязательно"
                           className={`${fieldClass} mt-1 tabular-nums`}
-                        />
-                      </label>
-                      <label className="block text-xs uppercase tracking-wider text-app-fg/55 sm:col-span-2">
-                        Ссылка на интеграцию
-                        <input
-                          type="url"
-                          inputMode="url"
-                          autoComplete="url"
-                          value={linkInput}
-                          onChange={(e) => setLinkInput(e.target.value)}
-                          placeholder="https://… пост, ролик, сторис"
-                          className={`${fieldClass} mt-1 font-mono text-[13px]`}
                         />
                       </label>
                     </div>
